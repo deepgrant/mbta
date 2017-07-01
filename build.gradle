@@ -1,0 +1,109 @@
+
+plugins {
+        id 'scala'
+        id "com.github.maiflai.scalatest" version "0.14"
+        // id 'war'
+}
+
+configurations {
+        all*.exclude group: 'org.bytedeco', module: 'javacpp-presets'
+        macrosCompile
+}
+
+apply from: "$projectDir/gradle/dependencies.gradle"
+
+repositories {
+        mavenCentral()
+}
+
+dependencies {
+    compile([libs.scala,
+      libs.scalaReflect,
+      libs.scalaParser,
+      libs.scalaXML,
+      libs.s3aws,
+      libs.stsaws,
+      libs.akka_actor,
+      libs.akka_cluster,
+      libs.akka_http,
+      libs.akka_slf4j,
+      libs.akka_stream,
+      libs.sprayJSON,
+      libs.slf4j,
+      libs.logback_classic,
+      libs.logback_core,
+      libs.ant,
+      libs.jna,
+      libs.commons_io,
+      libs.jwt,
+      libs.metrohash,
+      libs.pojava,
+      libs.univocity])
+    macrosCompile([libs.scala, libs.scalaReflect])
+}
+
+tasks.withType(ScalaCompile) {
+    // Enable Scala warnings output
+    scalaCompileOptions.additionalParameters = ["-feature", "-language:higherKinds"]
+    if (project.hasProperty('demo')) {
+      scalaCompileOptions.additionalParameters += ["-Xmacro-settings:cs.demo"]
+    }
+    if (project.hasProperty('long')) {
+      scalaCompileOptions.additionalParameters += ["-Xmacro-settings:cs.long"]
+    }
+}
+
+sourceSets {
+  macros {
+    scala.srcDir "source/scala-macros"
+    compileClasspath += files("source/scala-macros")
+  }
+  main {
+    scala.srcDir "source/scala"
+    compileClasspath += files("source/scala", "build/classes/macros")
+    resources.srcDirs = files("source/resources")
+  }
+  test {
+    scala.srcDir "test/scala"
+    resources.srcDirs = files("test/resources")
+    compileClasspath += files("source/scala", "source/scala-macros", "test/scala", "build/classes/macros")
+  }
+}
+
+compileMacrosScala {
+  // support for "gradle -t" builds
+  inputs.files fileTree(dir: "${projectDir}/source/scala-macros", include: "**.scala")
+  inputs.files fileTree(dir: "${projectDir}/source/scala", include: "**.scala")
+}
+
+compileScala {
+  dependsOn compileMacrosScala
+}
+
+jar {
+  manifest {
+    attributes(
+      [ "Implementation-Title": "mbta-dg"
+      , "Implementation-Version": "1.0-alpha"
+      , "Implementation-Vendor": "Deepgrant"
+      ]
+    )
+  }
+}
+
+task specs(type: Test) {
+    suites 'chaossumo.query', 'chaossumo.util.collection', 'chaossumo.util.codec', 'chaossumo.service.s3', 'chaossumo.util.concurrent'
+    // suites 'a.Spec', 'b.Spec', 'etc'
+}
+
+test {
+  doFirst {
+    delete "${projectDir}/build/test/scratch"
+  }
+}
+
+task printClasspath {
+    doLast {
+        configurations.testRuntime.each { println it }
+    }
+}
