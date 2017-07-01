@@ -17,25 +17,14 @@ import akka.http.scaladsl.server._
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.Directives._
 
-import com.amazonaws.auth.{AWSCredentials,BasicAWSCredentials,DefaultAWSCredentialsProviderChain}
-
 import java.io.File
 import java.util.concurrent.Semaphore
 import java.util.concurrent.{ConcurrentHashMap => MMap}
 
-import collection.JavaConverters._
-
-import org.joda.time.format.DateTimeFormat
-
-import scala.collection.immutable.{Set,TreeMap}
 import scala.concurrent.{Await,Future}
-import scala.concurrent.duration.{Duration,SECONDS}
 import scala.concurrent.duration._
-import scala.util.{Try,Success,Failure}
 
 import spray.json._
-
-import com.amazonaws.auth.{AWSCredentials,BasicAWSCredentials}
 
 object MBTAMain extends App {
   import java.util.concurrent.TimeUnit.{SECONDS => seconds}
