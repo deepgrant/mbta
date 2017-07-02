@@ -43,14 +43,6 @@ dependencies {
 }
 
 tasks.withType(ScalaCompile) {
-    // Enable Scala warnings output
-    scalaCompileOptions.additionalParameters = ["-feature", "-language:higherKinds"]
-    if (project.hasProperty('demo')) {
-      scalaCompileOptions.additionalParameters += ["-Xmacro-settings:cs.demo"]
-    }
-    if (project.hasProperty('long')) {
-      scalaCompileOptions.additionalParameters += ["-Xmacro-settings:cs.long"]
-    }
 }
 
 sourceSets {
@@ -62,11 +54,6 @@ sourceSets {
     scala.srcDir "source/scala"
     compileClasspath += files("source/scala", "build/classes/macros")
     resources.srcDirs = files("source/resources")
-  }
-  test {
-    scala.srcDir "test/scala"
-    resources.srcDirs = files("test/resources")
-    compileClasspath += files("source/scala", "source/scala-macros", "test/scala", "build/classes/macros")
   }
 }
 
@@ -91,19 +78,14 @@ jar {
   }
 }
 
-task specs(type: Test) {
-    suites 'chaossumo.query', 'chaossumo.util.collection', 'chaossumo.util.codec', 'chaossumo.service.s3', 'chaossumo.util.concurrent'
-    // suites 'a.Spec', 'b.Spec', 'etc'
-}
-
-test {
-  doFirst {
-    delete "${projectDir}/build/test/scratch"
-  }
-}
-
 task printClasspath {
     doLast {
         configurations.testRuntime.each { println it }
     }
+}
+
+task run(type: JavaExec, dependsOn: classes) {
+    main = 'mbta.actor.MBTAMain'
+    classpath sourceSets.main.runtimeClasspath
+    classpath configurations.runtime
 }
