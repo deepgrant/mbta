@@ -30,10 +30,52 @@ import spray.json._
 
 case class fetchVehiclesByRoute(route: String)
 
+object JsonData {
+  case class Vehicle(
+    vehicle_id        : String,
+    vehicle_timestamp : String,
+    vehicle_lat       : String,
+    vehicle_lon       : String,
+    vehicle_bearing   : String,
+    vehicle_label     : String,
+    vehicle_speed     : String
+  )
+
+  case class Trip(
+    trip_name     : String,
+    trip_id       : String,
+    trip_headsign : String,
+    vehicle       : Vehicle
+  )
+
+  case class Direction(
+    direction_name : String,
+    direction_id   : String,
+    trip           : List[Trip]
+  )
+
+  case class VehiclesByRoute(
+    route_type : String,
+    route_name : String,
+    route_id   : String,
+    mode_name  : String,
+    direction  : List[Direction]
+  )
+
+  object MBTAJsonProtocol {
+    import DefaultJsonProtocol._
+
+    implicit val VehicleParam         = jsonFormat7(Vehicle)
+    implicit val TripParam            = jsonFormat4(Trip)
+    implicit val DirectionParam       = jsonFormat3(Direction)
+    implicit val VehiclesByRouteParam = jsonFormat5(VehiclesByRoute)
+  }
+}
+
 object MBTAMain extends App {
   import java.util.concurrent.TimeUnit.{SECONDS => seconds}
 
-  implicit val timeout : akka.util.Timeout = 30.seconds
+  implicit val timeout : akka.util.Timeout = 10.seconds
   implicit val system = ActorSystem()
   implicit val executionContext = system.dispatcher
   implicit val scheduler = system.scheduler
@@ -49,7 +91,9 @@ object MBTAMain extends App {
   Await.result(v, Duration.Inf)
 
   v.map {
-    case vehs => println(vehs)
+    case vehs: JsonData.VehiclesByRoute => {
+      println(vehs.route_id)
+    }
   }
 }
 
@@ -62,8 +106,8 @@ class MBTAService extends Actor with ActorLogging {
   implicit val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
 
-  val api_key = "wX9NwuHnZU2ToO7GmGR9uw"
-
+  val api_key = "wX9NwuHnZU2ToO7GmGR9uw" // Public Key replace with developer/app key from MBTA portal
+  
   def fetchVehiclesPerRoute(route: String): Future[HttpResponse] = {
     Http().singleRequest(HttpRequest(uri = s"https://realtime.mbta.com/developer/api/v2/vehiclesbyroute?api_key=${api_key}&format=json&route=${route}"))
   }
@@ -80,7 +124,10 @@ class MBTAService extends Actor with ActorLogging {
           }.map {
             case s => {
               import DefaultJsonProtocol._
-              dst ! (s.toJson)
+              import JsonData.MBTAJsonProtocol._
+
+              val vbr = s.parseJson.convertTo[JsonData.VehiclesByRoute]
+              dst ! vbr
             }
           }
         }
