@@ -106,7 +106,7 @@ class MBTAService extends Actor with ActorLogging {
   implicit val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
 
-  val api_key = "wX9NwuHnZU2ToO7GmGR9uw" // Public Key replace with developer/app key from MBTA portal
+  val api_key = sys.env("mbta_api_key")
   
   def fetchVehiclesPerRoute(route: String): Future[HttpResponse] = {
     Http().singleRequest(HttpRequest(uri = s"https://realtime.mbta.com/developer/api/v2/vehiclesbyroute?api_key=${api_key}&format=json&route=${route}"))
