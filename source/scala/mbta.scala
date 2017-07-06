@@ -77,6 +77,18 @@ object JsonData {
 
   case class VehiclesByRouteFlat(table: List[VehicleByRouteFlat])
 
+  case class Stop(
+    stop_id             : String,
+    stop_name           : String,
+    parent_station      : String,
+    parent_station_name : String,
+    stop_lat            : String,
+    stop_lon            : String,
+    distance            : String
+  )
+
+  case class StopsByLocation(stop : List[Stop])
+
   object MBTAJsonProtocol {
     import DefaultJsonProtocol._
 
@@ -86,6 +98,8 @@ object JsonData {
     implicit val VehiclesByRouteParam     = jsonFormat5(VehiclesByRoute)
     implicit val VehicleByRouteFlatParam  = jsonFormat9(VehicleByRouteFlat)
     implicit val VehiclesByRouteFlatParam = jsonFormat1(VehiclesByRouteFlat)
+    implicit val StopParam                = jsonFormat7(Stop)
+    implicit val StopsByLocationParam     = jsonFormat1(StopsByLocation)
   }
 }
 
@@ -135,29 +149,55 @@ class MBTAService extends Actor with ActorLogging {
     Http().singleRequest(HttpRequest(uri = s"https://realtime.mbta.com/developer/api/v2/stopsbylocation?api_key=${api_key}&format=json&lat=${lat}&lon=${lon}"))
   }
 
+  import DefaultJsonProtocol._
+  import JsonData.MBTAJsonProtocol._
+
+  def decodeVehiclesPerRoute(route: String) : Future[JsonData.VehiclesByRoute] = {
+    fetchVehiclesPerRoute(route).flatMap {
+      case resp => {
+        resp.entity.toStrict(5.seconds).map {
+          case dec =>
+            dec.data.decodeString("UTF-8")
+        }.map {
+          case s => {
+            s.parseJson.convertTo[JsonData.VehiclesByRoute]
+          }
+        }
+      }
+    }
+  }
+
+  def decodeNearestStops(lat: String, lon: String) : Future[JsonData.StopsByLocation] = {
+    fetchStationNearestCoOrds(lat, lon).flatMap {
+      case nearest =>
+        nearest.entity.toStrict(5.seconds).map {
+          case dec =>
+            dec.data.decodeString("UTF-8")
+        }.map {
+          case rs =>
+            rs.parseJson.convertTo[JsonData.StopsByLocation]
+        }
+    }
+  }
+
   def receive = {
     case fetchVehiclesByRoute(route) => {
       import JsonData._
-      val dst = sender()
-      val vehs_resp =  fetchVehiclesPerRoute(route)
-      val vehs_fut = vehs_resp.flatMap {
-        case resp => {
-          resp.entity.toStrict(5.seconds).map {
-            case dec =>
-              dec.data.decodeString("UTF-8")
-          }.map {
-            case s => {
-              import DefaultJsonProtocol._
-              import JsonData.MBTAJsonProtocol._
 
-              val vehs = s.parseJson.convertTo[JsonData.VehiclesByRoute]
-              for {
-                dir <- vehs.direction
-                trip <- dir.trip
-              } yield {
-                for {
-                  nearest <- fetchStationNearestCoOrds(trip.vehicle.vehicle_lat, trip.vehicle.vehicle_lon)
-                } yield {
+      val dst = sender()
+      val vehs_fut = decodeVehiclesPerRoute(route).map {
+        case vehs =>
+          {
+            for {
+              dir <- vehs.direction
+              trip <- dir.trip
+            } yield {
+              decodeNearestStops(trip.vehicle.vehicle_lat, trip.vehicle.vehicle_lon).map {
+                case stops => {
+                  val stop_name = stops.stop.size match {
+                    case 0 => ""
+                    case _ => stops.stop.head.stop_name
+                  }
                   new VehicleByRouteFlat(
                     vehs.route_id,
                     vehs.route_name,
@@ -167,13 +207,12 @@ class MBTAService extends Actor with ActorLogging {
                     trip.trip_id,
                     trip.vehicle.vehicle_lat,
                     trip.vehicle.vehicle_lon,
-                    ""
+                    stop_name
                   )
                 }
               }
             }
           }
-        }
       }.map {
         case veh_f => {
           Future.foldLeft[VehicleByRouteFlat, List[VehicleByRouteFlat]](veh_f)(List.empty[VehicleByRouteFlat]) { case (l_veh_f, veh_f) => l_veh_f :+ veh_f }
