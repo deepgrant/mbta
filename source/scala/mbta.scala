@@ -25,6 +25,7 @@ import java.util.concurrent.{ConcurrentHashMap => MMap}
 
 import scala.concurrent.{Await,Future}
 import scala.concurrent.duration._
+import scala.util.{Success,Failure,Try}
 
 import spray.json._
 
@@ -62,13 +63,29 @@ object JsonData {
     direction  : List[Direction]
   )
 
+  case class VehicleByRouteFlat(
+    route_id        : String,
+    route_name      : String,
+    direction_id    : String,
+    direction_name  : String,
+    vehicle_id      : String,
+    trip_id         : String,
+    lat             : String,
+    lon             : String,
+    nearest_stop_id : String
+  )
+
+  case class VehiclesByRouteFlat(table: List[VehicleByRouteFlat])
+
   object MBTAJsonProtocol {
     import DefaultJsonProtocol._
 
-    implicit val VehicleParam         = jsonFormat7(Vehicle)
-    implicit val TripParam            = jsonFormat4(Trip)
-    implicit val DirectionParam       = jsonFormat3(Direction)
-    implicit val VehiclesByRouteParam = jsonFormat5(VehiclesByRoute)
+    implicit val VehicleParam             = jsonFormat7(Vehicle)
+    implicit val TripParam                = jsonFormat4(Trip)
+    implicit val DirectionParam           = jsonFormat3(Direction)
+    implicit val VehiclesByRouteParam     = jsonFormat5(VehiclesByRoute)
+    implicit val VehicleByRouteFlatParam  = jsonFormat9(VehicleByRouteFlat)
+    implicit val VehiclesByRouteFlatParam = jsonFormat1(VehiclesByRouteFlat)
   }
 }
 
@@ -91,8 +108,10 @@ object MBTAMain extends App {
   Await.result(v, Duration.Inf)
 
   v.map {
-    case vehs: JsonData.VehiclesByRoute => {
-      println(vehs.route_id)
+    case vehs: JsonData.VehiclesByRouteFlat => {
+      import DefaultJsonProtocol._
+      import JsonData.MBTAJsonProtocol._
+      println(vehs)
     }
   }
 }
@@ -107,16 +126,21 @@ class MBTAService extends Actor with ActorLogging {
   implicit val materializer = ActorMaterializer()
 
   val api_key = sys.env("mbta_api_key")
-  
+
   def fetchVehiclesPerRoute(route: String): Future[HttpResponse] = {
     Http().singleRequest(HttpRequest(uri = s"https://realtime.mbta.com/developer/api/v2/vehiclesbyroute?api_key=${api_key}&format=json&route=${route}"))
   }
 
+  def fetchStationNearestCoOrds(lat: String, lon: String): Future[HttpResponse] = {
+    Http().singleRequest(HttpRequest(uri = s"https://realtime.mbta.com/developer/api/v2/stopsbylocation?api_key=${api_key}&format=json&lat=${lat}&lon=${lon}"))
+  }
+
   def receive = {
     case fetchVehiclesByRoute(route) => {
+      import JsonData._
       val dst = sender()
-      val vehs_resp = fetchVehiclesPerRoute(route)
-      vehs_resp.map {
+      val vehs_resp =  fetchVehiclesPerRoute(route)
+      val vehs_fut = vehs_resp.flatMap {
         case resp => {
           resp.entity.toStrict(5.seconds).map {
             case dec =>
@@ -126,10 +150,44 @@ class MBTAService extends Actor with ActorLogging {
               import DefaultJsonProtocol._
               import JsonData.MBTAJsonProtocol._
 
-              val vbr = s.parseJson.convertTo[JsonData.VehiclesByRoute]
-              dst ! vbr
+              val vehs = s.parseJson.convertTo[JsonData.VehiclesByRoute]
+              for {
+                dir <- vehs.direction
+                trip <- dir.trip
+              } yield {
+                for {
+                  nearest <- fetchStationNearestCoOrds(trip.vehicle.vehicle_lat, trip.vehicle.vehicle_lon)
+                } yield {
+                  new VehicleByRouteFlat(
+                    vehs.route_id,
+                    vehs.route_name,
+                    dir.direction_id,
+                    dir.direction_name,
+                    trip.vehicle.vehicle_id,
+                    trip.trip_id,
+                    trip.vehicle.vehicle_lat,
+                    trip.vehicle.vehicle_lon,
+                    ""
+                  )
+                }
+              }
             }
           }
+        }
+      }.map {
+        case veh_f => {
+          Future.foldLeft[VehicleByRouteFlat, List[VehicleByRouteFlat]](veh_f)(List.empty[VehicleByRouteFlat]) { case (l_veh_f, veh_f) => l_veh_f :+ veh_f }
+        }
+      }.flatten
+
+      vehs_fut.onComplete {
+        case result  => {
+          val response = result match {
+            case Success(result) => new VehiclesByRouteFlat(result)
+            case Failure(_) => new VehiclesByRouteFlat(List.empty[VehicleByRouteFlat])
+          }
+          //println(response)
+          dst ! response
         }
       }
     }
