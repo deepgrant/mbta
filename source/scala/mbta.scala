@@ -125,7 +125,7 @@ object MBTAMain extends App {
     case vehs: JsonData.VehiclesByRouteFlat => {
       import DefaultJsonProtocol._
       import JsonData.MBTAJsonProtocol._
-      println(vehs)
+      println(vehs.toJson.prettyPrint)
     }
   }
 }
@@ -213,11 +213,11 @@ class MBTAService extends Actor with ActorLogging {
               }
             }
           }
-      }.map {
+      }.flatMap {
         case veh_f => {
           Future.foldLeft[VehicleByRouteFlat, List[VehicleByRouteFlat]](veh_f)(List.empty[VehicleByRouteFlat]) { case (l_veh_f, veh_f) => l_veh_f :+ veh_f }
         }
-      }.flatten
+      }
 
       vehs_fut.onComplete {
         case result  => {
@@ -225,7 +225,7 @@ class MBTAService extends Actor with ActorLogging {
             case Success(result) => new VehiclesByRouteFlat(result)
             case Failure(_) => new VehiclesByRouteFlat(List.empty[VehicleByRouteFlat])
           }
-          //println(response)
+
           dst ! response
         }
       }
