@@ -37,9 +37,9 @@ object JsonData {
     vehicle_timestamp : String,
     vehicle_lat       : String,
     vehicle_lon       : String,
-    vehicle_bearing   : String,
     vehicle_label     : String,
-    vehicle_speed     : String
+    vehicle_speed     : Option[String],
+    vehicle_bearing   : Option[String],
   )
 
   case class Trip(
@@ -118,16 +118,22 @@ object MBTAMain extends App {
 
   import akka.pattern.ask
 
-  val v = mbtaService ? new fetchVehiclesByRoute(route = "CR-Fitchburg")
-  Await.result(v, Duration.Inf)
-
-  v.map {
-    case vehs: JsonData.VehiclesByRouteFlat => {
-      import DefaultJsonProtocol._
-      import JsonData.MBTAJsonProtocol._
-      println(vehs.toJson.prettyPrint)
+  def tableOfVehicleByRoute(route: String) : Unit = {
+    for {
+      result <- mbtaService ? new fetchVehiclesByRoute(route)
+    } yield {
+      result match {
+        case vehs : JsonData.VehiclesByRouteFlat =>
+          import DefaultJsonProtocol._
+          import JsonData.MBTAJsonProtocol._
+          println(vehs.toJson.prettyPrint)
+      }
     }
   }
+
+  tableOfVehicleByRoute("CR-Fitchburg")
+  tableOfVehicleByRoute("Orange")
+  tableOfVehicleByRoute("Red")
 }
 
 class MBTAService extends Actor with ActorLogging {
