@@ -131,9 +131,11 @@ object MBTAMain extends App {
     }
   }
 
+  /*
   tableOfVehicleByRoute("CR-Fitchburg")
   tableOfVehicleByRoute("Orange")
   tableOfVehicleByRoute("Red")
+   */
 }
 
 class MBTAService extends Actor with ActorLogging {
@@ -155,6 +157,11 @@ class MBTAService extends Actor with ActorLogging {
     Http().singleRequest(HttpRequest(uri = s"https://realtime.mbta.com/developer/api/v2/stopsbylocation?api_key=${api_key}&format=json&lat=${lat}&lon=${lon}"))
   }
 
+  def testPipeTo : Future[HttpResponse] = {
+    Http().singleRequest(HttpRequest(uri = "http://www.google.com")).pipeTo(self)
+  }
+
+  testPipeTo
   import DefaultJsonProtocol._
   import JsonData.MBTAJsonProtocol._
 
