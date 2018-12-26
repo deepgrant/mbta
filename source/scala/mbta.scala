@@ -82,9 +82,6 @@ class MBTAService extends Actor with ActorLogging {
   self ! MBTAService.fetchRoute(None)
 
   def receive = {
-    case MBTAService.fetchVehiclesByRoute(route) => {
-    }
-
     case MBTAService.fetchRoute(None) => {
       Http().singleRequest(
         HttpRequest(
@@ -96,7 +93,7 @@ class MBTAService extends Actor with ActorLogging {
         )
       ).map {
         case HttpResponse(StatusCodes.OK, _, entity, _) =>
-          val resp = MBTAService.parseDockerResponse(entity).map {
+          val resp = MBTAService.parseMbtaResponse(entity).map {
             cf => log.info(s"Got: ${cf}")
           }
         case HttpResponse(code, _, entity, _) =>
@@ -113,10 +110,9 @@ class MBTAService extends Actor with ActorLogging {
 }
 
 object MBTAService {
-  case class fetchVehiclesByRoute(route: String)
   case class fetchRoute(route: Option[String] = None)
 
-  def parseDockerResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout, materializer: ActorMaterializer) : Future[Config] = {
+  def parseMbtaResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout, materializer: ActorMaterializer) : Future[Config] = {
     implicit val executionContext = system.dispatcher
 
     entity.toStrict(5.seconds).flatMap {
