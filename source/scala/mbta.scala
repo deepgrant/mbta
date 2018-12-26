@@ -88,7 +88,8 @@ class MBTAService extends Actor with ActorLogging {
           uri = Uri.from(
             scheme = "https",
             host   = "api-v3.mbta.com",
-            path   = "/routes"
+            path   = "/routes",
+            queryString  = Some(s"api_key=${api_key}")
           )
         )
       ).map {
