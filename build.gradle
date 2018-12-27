@@ -1,7 +1,7 @@
 
 plugins {
         id 'scala'
-        id "com.github.maiflai.scalatest" version "0.14"
+        id "com.github.maiflai.scalatest" version "0.19"
         // id 'war'
 }
 
@@ -31,14 +31,7 @@ dependencies {
       libs.sprayJSON,
       libs.slf4j,
       libs.logback_classic,
-      libs.logback_core,
-      libs.ant,
-      libs.jna,
-      libs.commons_io,
-      libs.jwt,
-      libs.metrohash,
-      libs.pojava,
-      libs.univocity])
+      libs.logback_core])
     macrosCompile([libs.scala, libs.scalaReflect])
 }
 
