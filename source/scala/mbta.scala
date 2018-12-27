@@ -27,8 +27,11 @@ import akka.util.{
   ByteString,
   Timeout
 }
-import akka.stream.ActorMaterializer
-import akka.stream.ActorMaterializerSettings
+import akka.stream.{
+  ActorMaterializer,
+  ActorMaterializerSettings,
+  OverflowStrategy
+}
 import akka.stream.scaladsl.{
   Flow,
   Sink,
@@ -37,6 +40,10 @@ import akka.stream.scaladsl.{
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.settings.{
+  ClientConnectionSettings,
+  ConnectionPoolSettings
+}
 
 import com.typesafe.config.{
   Config,
@@ -47,9 +54,18 @@ import java.io.File
 import java.util.concurrent.Semaphore
 import java.util.concurrent.{ConcurrentHashMap => MMap}
 
-import scala.concurrent.{Await,Future}
+import scala.concurrent.{
+  Await,
+  ExecutionContext,
+  Future,
+  Promise
+}
 import scala.concurrent.duration._
-import scala.util.{Success,Failure,Try}
+import scala.util.{
+  Success,
+  Failure,
+  Try
+}
 
 
 object MBTAMain extends App {
@@ -72,37 +88,88 @@ class MBTAService extends Actor with ActorLogging {
   import akka.pattern.pipe
   import context.dispatcher
 
-  implicit val system = ActorSystem()
-  implicit val materializer = ActorMaterializer()
-  implicit val logger = log
+  implicit val system           = ActorSystem()
+  implicit val materializer     = ActorMaterializer()
+  implicit val logger           = log
   implicit val timeout: Timeout = 30.seconds
 
   val api_key = sys.env("mbta_api_key")
+
+  def transportSettings = ConnectionPoolSettings(system)
+    .withMaxConnections(4)
+    .withMaxOpenRequests(256)
+    .withPipeliningLimit(64)
+
+  val queue = Source.queue[(HttpRequest,Promise[HttpResponse])](1024, OverflowStrategy.backpressure)
+    .via(
+      Http().newHostConnectionPoolHttps[Promise[HttpResponse]](
+        host     = "api-v3.mbta.com",
+        port     = 443,
+        settings = transportSettings,
+        log      = log)
+    ).map { case (res, p) =>
+      p.tryCompleteWith {
+        res.map { case res =>
+          res.entity
+            .withoutSizeLimit()
+            .toStrict(60.seconds)
+            .map(res.withEntity(_))
+        }.recover { case t =>
+          log.error(s"queue recover ${t}")
+          Future.failed(t)
+        }.getOrElse {
+          Future.failed(new IllegalStateException)
+        }
+      }
+    }.watchTermination() { case (mat,done) =>
+        done.onComplete {
+          case Success(_) => log.info(s"Socket connection gracefully terminated")
+          case Failure(t) => log.error(s"Socket connection terminated -> ${t}")
+        }
+        mat
+    }.to(Sink.ignore).run()
+
+  def mbtaUri(path: String, query: Option[String] = None) = Uri(
+    scheme      = "https",
+    path        = Uri.Path(path),
+    queryString = query,
+    fragment    = None
+  )
+
+  def queueRequest(request: HttpRequest) : Future[HttpResponse] = {
+    val retVal : Promise[HttpResponse] = Promise()
+
+    queue.offer((request,retVal)).flatMap(_ => retVal.future).recover {
+      case e: Exception => {
+        log.error(e, s"queueRequest -> ${e}")
+        HttpResponse(StatusCodes.InternalServerError)
+      }
+    }.andThen {
+      case Success(response) => log.debug(s"[RESPONSE] queueRequest(${request}) -> ${response}")
+      case Failure(t) => log.error(s"[RESPONSE] queueRequest(${request}) -> ${t}")
+    }
+  }
 
   self ! MBTAService.fetchRoute(None)
 
   def receive = {
     case MBTAService.fetchRoute(None) => {
-      Http().singleRequest(
-        HttpRequest(
-          uri = Uri.from(
-            scheme = "https",
-            host   = "api-v3.mbta.com",
-            path   = "/routes",
-            queryString  = Some(s"api_key=${api_key}")
-          )
-        )
+      queueRequest(
+        HttpRequest(uri = mbtaUri(
+          path  = "/routes",
+          query = Some(s"api_key=${api_key}")
+        ))
       ).map {
-        case HttpResponse(StatusCodes.OK, _, entity, _) =>
+        case HttpResponse(StatusCodes.OK, _, entity, _) => {
           val resp = MBTAService.parseMbtaResponse(entity).map {
             cf => log.info(s"Got: ${cf}")
           }
-        case HttpResponse(code, _, entity, _) =>
+        }
+        case HttpResponse(code, _, entity, _) => {
           log.error(s"Got ${code}")
           entity.discardBytes()
+        }
       }
-
-
     }
 
     case event =>
