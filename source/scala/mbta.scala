@@ -157,10 +157,14 @@ class MBTAService extends Actor with ActorLogging {
     }
   }
 
-  self ! MBTAService.fetchRoute(None)
+  (self ? MBTAService.Request.fetchRoutes()).mapTo[MBTAService.Response.fetchRoutes].map {
+    case MBTAService.Response.fetchRoutes(routes) => log.info(s"${routes}")
+  }
 
   def receive = {
-    case MBTAService.fetchRoute(None) => {
+    case MBTAService.Request.fetchRoutes() => {
+      val dst = sender()
+      log.info("sdsdsds")
       queueRequest(
         HttpRequest(uri = mbtaUri(
           path  = "/routes",
@@ -170,11 +174,11 @@ class MBTAService extends Actor with ActorLogging {
         case HttpResponse(StatusCodes.OK, _, entity, _) => {
           val resp = MBTAService.parseMbtaResponse(entity).map {
             cf =>
-              cf.getObjectList("data").asScala.toList.filter {
-                r => r.toConfig.getString("id").startsWith("CR-")
-              }.map {
-                route => log.info(s"""id: ${route.toConfig.getString("id")}, name: ${route.toConfig.getString("attributes.long_name")}""")
-              }
+              dst ! MBTAService.Response.fetchRoutes({
+                cf.getObjectList("data").asScala.toList.filter {
+                  r => r.toConfig.getInt("attributes.type") == 2
+                }.map { r => r.toConfig }
+              })
           }
         }
         case HttpResponse(code, _, entity, _) => {
@@ -190,7 +194,15 @@ class MBTAService extends Actor with ActorLogging {
 }
 
 object MBTAService {
-  case class fetchRoute(route: Option[String] = None)
+  object Request {
+    sealed trait t
+    case class fetchRoutes() extends t
+  }
+
+  object Response {
+    sealed trait t
+    case class fetchRoutes(routes: List[Object])
+  }
 
   def parseMbtaResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout, materializer: ActorMaterializer) : Future[Config] = {
     implicit val executionContext = system.dispatcher
