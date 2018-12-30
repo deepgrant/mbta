@@ -26,6 +26,7 @@ versions +=
         , aws: "1.11.445"
         , akka: "2.5.18"
         , akkaHttp: "10.1.5"
+        , akkaStreamContrib: "0.9"
         , slf4j: "1.7.25"
         , logback: "1.2.3"
         ]
@@ -45,6 +46,7 @@ libs +=
         , akka_http: "com.typesafe.akka:akka-http_${versions.scala}:${versions.akkaHttp}"
         , akka_slf4j: "com.typesafe.akka:akka-slf4j_${versions.scala}:${versions.akka}"
         , akka_stream: "com.typesafe.akka:akka-stream_${versions.scala}:${versions.akka}"
+        , akka_stream_contrib: "com.typesafe.akka:akka-stream-contrib_${versions.scala}:${versions.akkaStreamContrib}"
         , slf4j: "org.slf4j:slf4j-api:${versions.slf4j}"
         , logback_classic: "ch.qos.logback:logback-classic:${versions.logback}"
         , logback_core: "ch.qos.logback:logback-core:${versions.logback}"

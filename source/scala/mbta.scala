@@ -32,6 +32,8 @@ import akka.stream.{
   ActorMaterializerSettings,
   OverflowStrategy
 }
+import akka.stream.contrib.DelayFlow
+import akka.stream.contrib.DelayFlow.DelayStrategy
 import akka.stream.scaladsl.{
   Flow,
   Sink,
@@ -45,20 +47,24 @@ import akka.http.scaladsl.settings.{
   ConnectionPoolSettings
 }
 
+import collection.JavaConverters._
+
 import com.typesafe.config.{
   Config,
   ConfigFactory,
   ConfigRenderOptions
 }
-import java.io.File
-import java.util.concurrent.Semaphore
-import java.util.concurrent.{ConcurrentHashMap => MMap}
 
 import scala.concurrent.{
   Await,
   ExecutionContext,
   Future,
   Promise
+}
+import scala.concurrent.duration.{
+  Duration,
+  FiniteDuration,
+  SECONDS
 }
 import scala.concurrent.duration._
 import scala.util.{
@@ -100,7 +106,8 @@ class MBTAService extends Actor with ActorLogging {
     .withMaxOpenRequests(256)
     .withPipeliningLimit(64)
 
-  val queue = Source.queue[(HttpRequest,Promise[HttpResponse])](1024, OverflowStrategy.backpressure)
+  val queue = Source.queue[(HttpRequest,Promise[HttpResponse])](256, OverflowStrategy.backpressure)
+    .throttle(1, 100.millisecond)
     .via(
       Http().newHostConnectionPoolHttps[Promise[HttpResponse]](
         host     = "api-v3.mbta.com",
@@ -162,7 +169,12 @@ class MBTAService extends Actor with ActorLogging {
       ).map {
         case HttpResponse(StatusCodes.OK, _, entity, _) => {
           val resp = MBTAService.parseMbtaResponse(entity).map {
-            cf => log.info(s"Got: ${cf}")
+            cf =>
+              cf.getObjectList("data").asScala.toList.filter {
+                r => r.toConfig.getString("id").startsWith("CR-")
+              }.map {
+                route => log.info(s"""id: ${route.toConfig.getString("id")}, name: ${route.toConfig.getString("attributes.long_name")}""")
+              }
           }
         }
         case HttpResponse(code, _, entity, _) => {

@@ -28,6 +28,7 @@ dependencies {
       libs.akka_http,
       libs.akka_slf4j,
       libs.akka_stream,
+      libs.akka_stream_contrib,
       libs.sprayJSON,
       libs.slf4j,
       libs.logback_classic,
