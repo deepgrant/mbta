@@ -158,13 +158,14 @@ class MBTAService extends Actor with ActorLogging {
   }
 
   (self ? MBTAService.Request.fetchRoutes()).mapTo[MBTAService.Response.fetchRoutes].map {
-    case MBTAService.Response.fetchRoutes(routes) => log.info(s"${routes}")
+    case MBTAService.Response.fetchRoutes(routes) => {
+      self ! MBTAService.Request.fetchVehicles(routes)
+    }
   }
 
   def receive = {
     case MBTAService.Request.fetchRoutes() => {
       val dst = sender()
-      log.info("sdsdsds")
       queueRequest(
         HttpRequest(uri = mbtaUri(
           path  = "/routes",
@@ -188,6 +189,65 @@ class MBTAService extends Actor with ActorLogging {
       }
     }
 
+    case MBTAService.Request.fetchTrips(routes) => {
+      val dst = sender()
+      routes.map {
+        route => queueRequest(
+          HttpRequest(uri = mbtaUri(
+            path  = "/trips",
+            query = Some(s"""filter[route]=${route.getString("id")}&api_key=${api_key}""")
+          ))
+        ).map {
+          case HttpResponse(StatusCodes.OK, _, entity, _) => {
+            MBTAService.parseMbtaResponse(entity).map {
+              cf => {
+                cf.getObjectList("data").asScala.toList
+                .map { t => t.toConfig }
+                .map {
+                  t => log.info(t.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+                }
+              }
+            }
+          }
+          case HttpResponse(code, _, entity, _) => {
+            log.error(s"Got ${code}")
+            MBTAService.parseMbtaResponse(entity).map {
+              e => log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+            }
+          }
+        }
+      }
+    }
+
+    case MBTAService.Request.fetchVehicles(routes) => {
+      val dst = sender()
+      routes.map {
+        route => queueRequest(
+          HttpRequest(uri = mbtaUri(
+            path  = "/vehicles",
+            query = Some(s"""include=stop&filter[route]=${route.getString("id")}&api_key=${api_key}""")
+          ))
+        ).map {
+          case HttpResponse(StatusCodes.OK, _, entity, _) => {
+            MBTAService.parseMbtaResponse(entity).map {
+              cf => {
+                cf.getObjectList("data").asScala.toList
+                .map { t => t.toConfig }
+                .map {
+                  t => log.info(t.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+                }
+              }
+            }
+          }
+          case HttpResponse(code, _, entity, _) => {
+            log.error(s"Got ${code}")
+            MBTAService.parseMbtaResponse(entity).map {
+              e => log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+            }
+          }
+        }
+      }
+    }
     case event =>
       log.debug("event={}", event.toString)
   }
@@ -195,13 +255,15 @@ class MBTAService extends Actor with ActorLogging {
 
 object MBTAService {
   object Request {
-    sealed trait t
-    case class fetchRoutes() extends t
+    sealed trait T
+    case class fetchRoutes() extends T
+    case class fetchTrips(routes: List[Config]) extends T
+    case class fetchVehicles(routes: List[Config]) extends T
   }
 
   object Response {
-    sealed trait t
-    case class fetchRoutes(routes: List[Object])
+    sealed trait T
+    case class fetchRoutes(routes: List[Config]) extends T
   }
 
   def parseMbtaResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout, materializer: ActorMaterializer) : Future[Config] = {
