@@ -32,7 +32,8 @@ dependencies {
       libs.sprayJSON,
       libs.slf4j,
       libs.logback_classic,
-      libs.logback_core])
+      libs.logback_core],
+      libs.pprint)
     macrosCompile([libs.scala, libs.scalaReflect])
 }
 

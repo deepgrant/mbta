@@ -157,11 +157,7 @@ class MBTAService extends Actor with ActorLogging {
     }
   }
 
-  (self ? MBTAService.Request.fetchRoutes()).mapTo[MBTAService.Response.fetchRoutes].map {
-    case MBTAService.Response.fetchRoutes(routes) => {
-      self ! MBTAService.Request.fetchVehicles(routes)
-    }
-  }
+  self ! MBTAService.Request.trackVehiclesPerRoute()
 
   def receive = {
     case MBTAService.Request.fetchRoutes() => {
@@ -204,7 +200,7 @@ class MBTAService extends Actor with ActorLogging {
                 cf.getObjectList("data").asScala.toList
                 .map { t => t.toConfig }
                 .map {
-                  t => log.info(t.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+                  t => log.info(t.root().render(ConfigRenderOptions.concise.setJson(true)))
                 }
               }
             }
@@ -221,33 +217,45 @@ class MBTAService extends Actor with ActorLogging {
 
     case MBTAService.Request.fetchVehicles(routes) => {
       val dst = sender()
-      routes.map {
+      Future.sequence { routes.map {
         route => queueRequest(
           HttpRequest(uri = mbtaUri(
             path  = "/vehicles",
             query = Some(s"""include=stop&filter[route]=${route.getString("id")}&api_key=${api_key}""")
           ))
-        ).map {
+        ).flatMap {
           case HttpResponse(StatusCodes.OK, _, entity, _) => {
             MBTAService.parseMbtaResponse(entity).map {
-              cf => {
-                cf.getObjectList("data").asScala.toList
-                .map { t => t.toConfig }
-                .map {
-                  t => log.info(t.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
-                }
-              }
+              cf => cf.getObjectList("data").asScala.toList.map { t => t.toConfig }
             }
           }
           case HttpResponse(code, _, entity, _) => {
             log.error(s"Got ${code}")
             MBTAService.parseMbtaResponse(entity).map {
-              e => log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+              e =>
+                log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+                List(ConfigFactory.empty)
             }
+          }
+        }
+      } }.onComplete {
+        case Success(vs) =>
+          dst ! vs.flatten
+        case Failure(_) => dst ! List.empty[Config]
+     }
+    }
+
+    case MBTAService.Request.trackVehiclesPerRoute() => {
+      (self ? MBTAService.Request.fetchRoutes()).mapTo[MBTAService.Response.fetchRoutes].map {
+        case MBTAService.Response.fetchRoutes(routes) => {
+          (self ? MBTAService.Request.fetchVehicles(routes)).mapTo[List[Config]].map { vs =>
+            vs.foreach { v => log.info(v.root().render(ConfigRenderOptions.concise.setJson(true))) }
+            system.scheduler.scheduleOnce(10.seconds, self, MBTAService.Request.trackVehiclesPerRoute())
           }
         }
       }
     }
+
     case event =>
       log.debug("event={}", event.toString)
   }
@@ -259,6 +267,7 @@ object MBTAService {
     case class fetchRoutes() extends T
     case class fetchTrips(routes: List[Config]) extends T
     case class fetchVehicles(routes: List[Config]) extends T
+    case class trackVehiclesPerRoute() extends T
   }
 
   object Response {

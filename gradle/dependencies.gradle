@@ -29,6 +29,7 @@ versions +=
         , akkaStreamContrib: "0.9"
         , slf4j: "1.7.25"
         , logback: "1.2.3"
+        , pprint: "0.5.3"
         ]
 
 libs +=
@@ -50,4 +51,5 @@ libs +=
         , slf4j: "org.slf4j:slf4j-api:${versions.slf4j}"
         , logback_classic: "ch.qos.logback:logback-classic:${versions.logback}"
         , logback_core: "ch.qos.logback:logback-core:${versions.logback}"
+        , pprint: "com.lihaoyi:pprint_${versions.scala}:${versions.pprint}"
         ]
