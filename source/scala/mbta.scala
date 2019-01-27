@@ -55,6 +55,10 @@ import com.typesafe.config.{
   ConfigRenderOptions
 }
 
+import org.slf4j.{
+  LoggerFactory
+}
+
 import scala.concurrent.{
   Await,
   ExecutionContext,
@@ -100,6 +104,9 @@ class MBTAService extends Actor with ActorLogging {
   implicit val timeout: Timeout = 30.seconds
 
   val api_key = sys.env("mbta_api_key")
+
+  val vehiclesLogger = LoggerFactory.getLogger("vehicles")
+  val predictionsLogger = LoggerFactory.getLogger("predictions")
 
   def transportSettings = ConnectionPoolSettings(system)
     .withMaxConnections(4)
@@ -171,11 +178,9 @@ class MBTAService extends Actor with ActorLogging {
         case HttpResponse(StatusCodes.OK, _, entity, _) => {
           val resp = MBTAService.parseMbtaResponse(entity).map {
             cf =>
-              dst ! MBTAService.Response.fetchRoutes({
-                cf.getObjectList("data").asScala.toList.filter {
-                  r => r.toConfig.getInt("attributes.type") == 2
-                }.map { r => r.toConfig }
-              })
+            dst ! MBTAService.Response.fetchRoutes {
+              cf.getObjectList("data").asScala.toList.filter { _.toConfig.getInt("attributes.type") == 2 }.map { _.toConfig }
+            }
           }
         }
         case HttpResponse(code, _, entity, _) => {
@@ -185,37 +190,33 @@ class MBTAService extends Actor with ActorLogging {
       }
     }
 
-    case MBTAService.Request.fetchTrips(routes) => {
+    case MBTAService.Request.fetchTripsPerRoute(routes) => {
       val dst = sender()
-      routes.map {
+      Future.sequence { routes.map {
         route => queueRequest(
           HttpRequest(uri = mbtaUri(
             path  = "/trips",
             query = Some(s"""filter[route]=${route.getString("id")}&api_key=${api_key}""")
           ))
-        ).map {
+        ).flatMap {
           case HttpResponse(StatusCodes.OK, _, entity, _) => {
-            MBTAService.parseMbtaResponse(entity).map {
-              cf => {
-                cf.getObjectList("data").asScala.toList
-                .map { t => t.toConfig }
-                .map {
-                  t => log.info(t.root().render(ConfigRenderOptions.concise.setJson(true)))
-                }
-              }
-            }
+            MBTAService.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
           }
           case HttpResponse(code, _, entity, _) => {
             log.error(s"Got ${code}")
             MBTAService.parseMbtaResponse(entity).map {
               e => log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+              List(ConfigFactory.empty)
             }
           }
         }
+      } }.onComplete {
+        case Success(ts) => dst ! ts.flatten
+        case Failure(_) => dst ! List.empty[Config]
       }
     }
 
-    case MBTAService.Request.fetchVehicles(routes) => {
+    case MBTAService.Request.fetchVehiclesPerRoute(routes) => {
       val dst = sender()
       Future.sequence { routes.map {
         route => queueRequest(
@@ -225,31 +226,60 @@ class MBTAService extends Actor with ActorLogging {
           ))
         ).flatMap {
           case HttpResponse(StatusCodes.OK, _, entity, _) => {
-            MBTAService.parseMbtaResponse(entity).map {
-              cf => cf.getObjectList("data").asScala.toList.map { t => t.toConfig }
-            }
+            MBTAService.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
           }
           case HttpResponse(code, _, entity, _) => {
             log.error(s"Got ${code}")
             MBTAService.parseMbtaResponse(entity).map {
               e =>
-                log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
-                List(ConfigFactory.empty)
+              log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+              List(ConfigFactory.empty)
             }
           }
         }
       } }.onComplete {
-        case Success(vs) =>
-          dst ! vs.flatten
+        case Success(vs) => dst ! vs.flatten
         case Failure(_) => dst ! List.empty[Config]
-     }
+      }
+    }
+
+    case MBTAService.Request.trackPredictionsPerRoute(routes) => {
+      val dst = sender()
+      Future.sequence { routes.map {
+        route => queueRequest(
+          HttpRequest(uri = mbtaUri(
+            path  = "/predictions",
+            query = Some(s"""include=alerts&filter[route]=${route.getString("id")}&api_key=${api_key}""")
+          ))
+        ).flatMap {
+          case HttpResponse(StatusCodes.OK, _, entity, _) => {
+            MBTAService.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
+          }
+          case HttpResponse(code, _, entity, _) => {
+            log.error(s"Got ${code}")
+            MBTAService.parseMbtaResponse(entity).map {
+              e =>
+              log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
+              List(ConfigFactory.empty)
+            }
+          }
+        }
+      } }.onComplete {
+        case Success(tps) => dst ! tps.flatten
+        case Failure(_) => dst ! List.empty[Config]
+      }
     }
 
     case MBTAService.Request.trackVehiclesPerRoute() => {
       (self ? MBTAService.Request.fetchRoutes()).mapTo[MBTAService.Response.fetchRoutes].map {
         case MBTAService.Response.fetchRoutes(routes) => {
-          (self ? MBTAService.Request.fetchVehicles(routes)).mapTo[List[Config]].map { vs =>
-            vs.foreach { v => log.info(v.root().render(ConfigRenderOptions.concise.setJson(true))) }
+
+          for {
+            vs <- (self ? MBTAService.Request.fetchVehiclesPerRoute(routes)).mapTo[List[Config]]
+            ps <- (self ? MBTAService.Request.trackPredictionsPerRoute(routes)).mapTo[List[Config]]
+          } yield {
+            ps.foreach { p => predictionsLogger.info(p.root().render(ConfigRenderOptions.concise.setJson(true))) }
+            vs.foreach { v => vehiclesLogger.info(v.root().render(ConfigRenderOptions.concise.setJson(true))) }
             system.scheduler.scheduleOnce(10.seconds, self, MBTAService.Request.trackVehiclesPerRoute())
           }
         }
@@ -265,9 +295,10 @@ object MBTAService {
   object Request {
     sealed trait T
     case class fetchRoutes() extends T
-    case class fetchTrips(routes: List[Config]) extends T
-    case class fetchVehicles(routes: List[Config]) extends T
+    case class fetchTripsPerRoute(routes: List[Config]) extends T
+    case class fetchVehiclesPerRoute(routes: List[Config]) extends T
     case class trackVehiclesPerRoute() extends T
+    case class trackPredictionsPerRoute(routes: List[Config]) extends T
   }
 
   object Response {
