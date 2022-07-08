@@ -35,7 +35,8 @@ import akka.stream.{
 import akka.stream.scaladsl.{
   Flow,
   Sink,
-  Source
+  Source,
+  SourceQueueWithComplete
 }
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.model.StatusCodes._
@@ -105,40 +106,61 @@ class MBTAService extends Actor with ActorLogging {
   val vehiclesLogger = LoggerFactory.getLogger("vehicles")
   val predictionsLogger = LoggerFactory.getLogger("predictions")
 
-  def transportSettings = ConnectionPoolSettings(system)
-    .withMaxConnections(4)
-    .withMaxOpenRequests(256)
-    .withPipeliningLimit(64)
+  object MBTAaccess {
+    def transportSettings = ConnectionPoolSettings(system)
+      .withMaxConnections(4)
+      .withMaxOpenRequests(256)
+      .withPipeliningLimit(64)
 
-  val queue = Source.queue[(HttpRequest,Promise[HttpResponse])](256, OverflowStrategy.backpressure)
-    .throttle(1, 100.millisecond)
-    .via(
-      Http().newHostConnectionPoolHttps[Promise[HttpResponse]](
-        host     = "api-v3.mbta.com",
-        port     = 443,
-        settings = transportSettings,
-        log      = log)
-    ).map { case (res, p) =>
-      p.tryCompleteWith {
-        res.map { case res =>
-          res.entity
-            .withoutSizeLimit()
-            .toStrict(60.seconds)
-            .map(res.withEntity(_))
-        }.recover { case t =>
-          log.error(s"queue recover ${t}")
-          Future.failed(t)
-        }.getOrElse {
-          Future.failed(new IllegalStateException)
+    var queue : Option[SourceQueueWithComplete[(HttpRequest, Promise[HttpResponse])]] = None
+
+    def runQ : Future[akka.Done] = {
+      val (queue, source) = Source
+        .queue[(HttpRequest,Promise[HttpResponse])](bufferSize = 256, overflowStrategy = OverflowStrategy.backpressure)
+        .preMaterialize()
+
+      MBTAaccess.queue = Some(queue)
+
+      source
+        .throttle(1, 100.millisecond)
+        .via(
+          Http().newHostConnectionPoolHttps[Promise[HttpResponse]](
+            host     = "api-v3.mbta.com",
+            port     = 443,
+            settings = transportSettings,
+            log      = log)
+        )
+        .map { case (res, p) =>
+          p.tryCompleteWith {
+            res.map { case res =>
+              res.entity
+                .withoutSizeLimit()
+                .toStrict(60.seconds)
+                .map(res.withEntity(_))
+            }.recover { case t =>
+              log.error(s"queue recover ${t}")
+              Future.failed(t)
+            }.getOrElse {
+              Future.failed(new IllegalStateException)
+            }
+          }
         }
-      }
-    }.watchTermination() { case (mat,done) =>
-        done.onComplete {
-          case Success(_) => log.info(s"Socket connection gracefully terminated")
-          case Failure(t) => log.error(s"Socket connection terminated -> ${t}")
+        .runWith(Sink.ignore)
+        .andThen {
+          case Success(_) =>
+            log.error("MBTAaccess.runQ stopped with an unexpected but normal termination.")
+          case Failure(t) =>
+            log.error(t, "MBTAaccess.runQ stopped")
         }
-        mat
-    }.to(Sink.ignore).run()
+        .transformWith {
+          case _ =>
+            log.warning("MBTAaccess.runQ restarting")
+            runQ
+        }
+    }
+  }
+  
+  MBTAaccess.runQ
 
   def mbtaUri(path: String, query: Option[String] = None) = Uri(
     scheme      = "https",
@@ -150,14 +172,18 @@ class MBTAService extends Actor with ActorLogging {
   def queueRequest(request: HttpRequest) : Future[HttpResponse] = {
     val retVal : Promise[HttpResponse] = Promise()
 
-    queue.offer((request,retVal)).flatMap(_ => retVal.future).recover {
-      case e: Exception => {
-        log.error(e, s"queueRequest -> ${e}")
-        HttpResponse(StatusCodes.InternalServerError)
+    MBTAaccess.queue.map { queue =>
+      queue.offer((request,retVal)).flatMap(_ => retVal.future).recover {
+        case e: Exception => {
+          log.error(e, s"queueRequest -> ${e}")
+          HttpResponse(StatusCodes.InternalServerError)
+        }
+      }.andThen {
+        case Success(response) => log.debug(s"[RESPONSE] queueRequest(${request}) -> ${response}")
+        case Failure(t) => log.error(s"[RESPONSE] queueRequest(${request}) -> ${t}")
       }
-    }.andThen {
-      case Success(response) => log.debug(s"[RESPONSE] queueRequest(${request}) -> ${response}")
-      case Failure(t) => log.error(s"[RESPONSE] queueRequest(${request}) -> ${t}")
+    }.getOrElse {
+      Future.failed(new Exception("queueRequest could not Queue up the request. No Queue found."))
     }
   }
 
