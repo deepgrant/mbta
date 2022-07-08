@@ -32,8 +32,6 @@ import akka.stream.{
   ActorMaterializerSettings,
   OverflowStrategy
 }
-import akka.stream.contrib.DelayFlow
-import akka.stream.contrib.DelayFlow.DelayStrategy
 import akka.stream.scaladsl.{
   Flow,
   Sink,
@@ -99,7 +97,6 @@ class MBTAService extends Actor with ActorLogging {
   import context.dispatcher
 
   implicit val system           = ActorSystem()
-  implicit val materializer     = ActorMaterializer()
   implicit val logger           = log
   implicit val timeout: Timeout = 30.seconds
 
@@ -306,7 +303,7 @@ object MBTAService {
     case class fetchRoutes(routes: List[Config]) extends T
   }
 
-  def parseMbtaResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout, materializer: ActorMaterializer) : Future[Config] = {
+  def parseMbtaResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout) : Future[Config] = {
     implicit val executionContext = system.dispatcher
 
     entity.toStrict(5.seconds).flatMap {

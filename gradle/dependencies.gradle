@@ -6,6 +6,7 @@ ext {
 
   platform = {
     arch = Os.OS_ARCH
+    println("ARCH: ${arch}")
     if (arch == "amd64") {
       arch = "x86_64"
     }
@@ -18,38 +19,38 @@ ext {
 }
 
 versions +=
-        [ scala: "2.12"
-        , scalaParser: "1.1.1"
-        , scalaTest: "3.0.5"
-        , scalaXml: "1.1.1"
-        , sprayJSON: "1.3.4"
-        , aws: "1.11.445"
-        , akka: "2.5.18"
-        , akkaHttp: "10.1.5"
-        , akkaStreamContrib: "0.9"
-        , slf4j: "1.7.25"
-        , logback: "1.2.3"
-        , pprint: "0.5.3"
-        ]
+  [ scala: "2.12"
+  , scalaParser: "1.1.1"
+  , scalaTest: "3.0.5"
+  , scalaXml: "1.1.1"
+  , sprayJSON: "1.3.6"
+  , aws: "1.12.225"
+  , akka: "2.6.15"
+  , akkaHttp: "10.2.9"
+  , akkaStreamJson: "3.4.0"
+  , slf4j: "1.7.25"
+  , logback: "1.2.9"
+  , pprint: "0.7.3"
+  ]
 
 libs +=
-        [ scala: "org.scala-lang:scala-library:${versions.scala}.7"
-        , scalaCompiler: "org.scala-lang:scala-compiler:${versions.scala}.7"
-        , scalaReflect: "org.scala-lang:scala-reflect:${versions.scala}.7"
-        , scalaParser: "org.scala-lang.modules:scala-parser-combinators_${versions.scala}:${versions.scalaParser}"
-        , scalaXML: "org.scala-lang.modules:scala-xml_${versions.scala}:${versions.scalaXml}"
-        , scalaTest: "org.scalatest:scalatest_${versions.scala}:${versions.scalaTest}"
-        , sprayJSON: "io.spray:spray-json_${versions.scala}:${versions.sprayJSON}"
-        , s3aws: "com.amazonaws:aws-java-sdk-s3:${versions.aws}"
-        , stsaws: "com.amazonaws:aws-java-sdk-sts:${versions.aws}"
-        , akka_actor: "com.typesafe.akka:akka-actor_${versions.scala}:${versions.akka}"
-        , akka_cluster: "com.typesafe.akka:akka-cluster_${versions.scala}:${versions.akka}"
-        , akka_http: "com.typesafe.akka:akka-http_${versions.scala}:${versions.akkaHttp}"
-        , akka_slf4j: "com.typesafe.akka:akka-slf4j_${versions.scala}:${versions.akka}"
-        , akka_stream: "com.typesafe.akka:akka-stream_${versions.scala}:${versions.akka}"
-        , akka_stream_contrib: "com.typesafe.akka:akka-stream-contrib_${versions.scala}:${versions.akkaStreamContrib}"
-        , slf4j: "org.slf4j:slf4j-api:${versions.slf4j}"
-        , logback_classic: "ch.qos.logback:logback-classic:${versions.logback}"
-        , logback_core: "ch.qos.logback:logback-core:${versions.logback}"
-        , pprint: "com.lihaoyi:pprint_${versions.scala}:${versions.pprint}"
-        ]
+  [ scala: "org.scala-lang:scala-library:${versions.scala}.7"
+  , scalaCompiler: "org.scala-lang:scala-compiler:${versions.scala}.7"
+  , scalaReflect: "org.scala-lang:scala-reflect:${versions.scala}.7"
+  , scalaParser: "org.scala-lang.modules:scala-parser-combinators_${versions.scala}:${versions.scalaParser}"
+  , scalaXML: "org.scala-lang.modules:scala-xml_${versions.scala}:${versions.scalaXml}"
+  , scalaTest: "org.scalatest:scalatest_${versions.scala}:${versions.scalaTest}"
+  , sprayJSON: "io.spray:spray-json_${versions.scala}:${versions.sprayJSON}"
+  , s3aws: "com.amazonaws:aws-java-sdk-s3:${versions.aws}"
+  , stsaws: "com.amazonaws:aws-java-sdk-sts:${versions.aws}"
+  , akka_actor: "com.typesafe.akka:akka-actor_${versions.scala}:${versions.akka}"
+  , akka_cluster: "com.typesafe.akka:akka-cluster_${versions.scala}:${versions.akka}"
+  , akka_http: "com.typesafe.akka:akka-http_${versions.scala}:${versions.akkaHttp}"
+  , akka_slf4j: "com.typesafe.akka:akka-slf4j_${versions.scala}:${versions.akka}"
+  , akka_stream: "com.typesafe.akka:akka-stream_${versions.scala}:${versions.akka}"
+  , akka_stream_json: "de.knutwalker:akka-stream-json_${versions.scala}:${versions.akkaStreamJson}"
+  , slf4j: "org.slf4j:slf4j-api:${versions.slf4j}"
+  , logback_classic: "ch.qos.logback:logback-classic:${versions.logback}"
+  , logback_core: "ch.qos.logback:logback-core:${versions.logback}"
+  , pprint: "com.lihaoyi:pprint_${versions.scala}:${versions.pprint}"
+  ]
