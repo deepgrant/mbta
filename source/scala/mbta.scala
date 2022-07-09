@@ -123,7 +123,7 @@ class MBTAService extends Actor with ActorLogging {
       MBTAaccess.queue = Some(queue)
 
       source
-        .throttle(1, 100.millisecond)
+        .throttle(1000, 1.minute)
         .via(
           Http().newHostConnectionPoolHttps[Promise[HttpResponse]](
             host     = "api-v3.mbta.com",
@@ -233,7 +233,7 @@ class MBTAService extends Actor with ActorLogging {
 
     def vehiclesPerRouteRawFlow : Flow[vd, vd, NotUsed] = {
       Flow[vd]
-        .mapAsync(parallelism = 4) {
+        .mapAsync(parallelism = 12) {
           case VehicleRoute(route) => {
             MBTAaccess.queueRequest(
               HttpRequest(uri = MBTAaccess.mbtaUri(
@@ -297,7 +297,7 @@ class MBTAService extends Actor with ActorLogging {
 
     def stopIdLookupFlow : Flow[vd, vd, NotUsed] = {
       Flow[vd]
-        .mapAsync(parallelism = 4) {
+        .mapAsync(parallelism = 16) {
           case vd : VehicleData => {
             vd.stopId.map { stopId =>
               val uri = MBTAaccess.mbtaUri(
