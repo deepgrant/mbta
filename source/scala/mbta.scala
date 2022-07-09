@@ -204,21 +204,97 @@ class MBTAService extends Actor with ActorLogging {
   }
 
   object RequestFlow {
-    object Request {
-      sealed trait T
-      case class Routes() extends T
+    sealed trait rd
+    case class TickRoutes() extends rd
+    case class Routes(routes: Vector[Config]) extends rd
+
+    sealed trait vd
+    case class VehicleRoute(route: String) extends vd
+    case class VehiclesPerRouteRaw(route: String, rawVehicles: Vector[Config]) extends vd
+    case class VehicleData(
+      routeId             : String,
+      vehicleId           : Option[String] = None,
+      stopId              : Option[String] = None,
+      bearing             : Option[Int]    = None,
+      directionId         : Option[Int]    = None,
+      currentStatus       : Option[String] = None,
+      currentStopSequence : Option[Int]    = None,
+      latitude            : Option[Double] = None,
+      longitude           : Option[Double] = None,
+      speed               : Option[Double] = None,
+      updatedAt           : Option[String] = None,
+      timeStamp           : Long           = java.time.Instant.now().toEpochMilli()
+    ) extends vd
+    case class VehicleDataNull() extends vd
+
+    def vehiclesPerRouteRawFlow : Flow[vd, vd, NotUsed] = {
+      Flow[vd]
+        .mapAsync(parallelism = 4) {
+          case VehicleRoute(route) => {
+            MBTAaccess.queueRequest(
+              HttpRequest(uri = MBTAaccess.mbtaUri(
+                path  = "/vehicles",
+                query = Some(s"""include=stop&filter[route]=${route}&api_key=${api_key}""")
+              ))
+            ).flatMap {
+              case HttpResponse(StatusCodes.OK, _, entity, _) => {
+                MBTAaccess.parseMbtaResponse(entity).map { resp =>
+                  log.info("vehiclesPerRouteRawFlow({}) returned: OK", route)
+                  VehiclesPerRouteRaw(
+                    route       = route,
+                    rawVehicles = resp.getObjectList("data").asScala.toVector.map { _.toConfig }
+                  )
+                }
+              }
+              case HttpResponse(code, _, entity, _) => Future.successful {
+                log.error("vehiclesPerRouteFlow returned unexpected code: {}", code.toString)
+                entity.discardBytes()
+                VehiclesPerRouteRaw(
+                  route       = route,
+                  rawVehicles = Vector.empty[Config]
+                )
+              }
+            }
+          }
+          case unExpected => Future.failed {
+            log.error("vehiclesPerRouteRawFlow unexpected input: {}", unExpected.toString)
+            new Exception("vehiclesPerRouteRawFlow unexpected input")
+          }
+        }
     }
 
-    object Response {
-      sealed trait T
-      case class Routes(routes: Vector[Config]) extends T
+    def vehiclesPerRouteFlow : Flow[vd, vd, NotUsed] = {
+      Flow[vd]
+        .mapConcat {
+          case VehiclesPerRouteRaw(route, rv) => {
+            rv.map { r =>
+              VehicleData(
+                routeId             = route,
+                vehicleId           = Try(r.getString("attributes.label")).toOption,
+                stopId              = Try(r.getString("relationships.stop.data.id")).toOption,
+                bearing             = Try(r.getInt("attributes.bearing")).toOption,
+                directionId         = Try(r.getInt("attributes.direction_id")).toOption,
+                currentStatus       = Try(r.getString("attributes.current_status")).toOption,
+                currentStopSequence = Try(r.getInt("attributes.current_stop_sequence")).toOption,
+                latitude            = Try(r.getDouble("attributes.latitude")).toOption,
+                longitude           = Try(r.getDouble("attributes.longitude")).toOption,
+                speed               = Try(r.getDouble("attributes.speed")).toOption,
+                updatedAt           = Try(r.getString("attributes.updated_at")).toOption
+              )
+            }
+          }
+          case unExpected => {
+            log.error("vehiclesPerRouteFlow unexpected input: {}", unExpected.toString)
+            Vector(VehicleDataNull())
+          }
+        }
     }
 
     def runRF = {
       Source
-        .tick(initialDelay = FiniteDuration(3, "seconds"), interval = FiniteDuration(10, "seconds"), tick = RequestFlow.Request.Routes)
+        .tick(initialDelay = FiniteDuration(1, "seconds"), interval = FiniteDuration(10, "seconds"), tick = TickRoutes)
         .buffer(size = 1, overflowStrategy = OverflowStrategy.dropHead)
-        .mapAsync[RequestFlow.Response.Routes](parallelism = 1) { _ =>
+        .mapAsync[Routes](parallelism = 1) { _ =>
           MBTAaccess.queueRequest(
             HttpRequest(uri = MBTAaccess.mbtaUri(
               path  = "/routes",
@@ -228,7 +304,7 @@ class MBTAService extends Actor with ActorLogging {
           .flatMap {
             case HttpResponse(StatusCodes.OK, _, entity, _) => {
               MBTAaccess.parseMbtaResponse(entity).map { response =>
-                RequestFlow.Response.Routes(
+                Routes(
                   routes = response.getObjectList("data").asScala.toVector.filter { _.toConfig.getInt("attributes.type") == 2 }.map { _.toConfig }
                 )
               }
@@ -237,19 +313,21 @@ class MBTAService extends Actor with ActorLogging {
             case HttpResponse(code, _, entity, _) => Future.successful {
               log.error("RequestFlow.RoutesFlow.HttpResponse({})", code.toString)
               entity.discardBytes()
-              RequestFlow.Response.Routes(routes = Vector.empty[Config])
+              Routes(routes = Vector.empty[Config])
             }
           }
         }
         .recover {
           case e: Throwable =>
             log.error("RequestFlow.RoutesFlow.recover -- {}", e)
-            RequestFlow.Response.Routes(routes = Vector.empty[Config])
+            Routes(routes = Vector.empty[Config])
         }
-        .mapConcat { case RequestFlow.Response.Routes(routes) => routes.map { _.getString("id") } }
+        .mapConcat { case Routes(routes) => routes.map { r => VehicleRoute(route = r.getString("id")) } }
         .groupBy(maxSubstreams = 32, f = { case rid => rid })
+        .via(vehiclesPerRouteRawFlow)
+        .via(vehiclesPerRouteFlow)
         .mergeSubstreams
-        .toMat(Sink.foreach { route => log.info(route) })(Keep.right)
+        .toMat(Sink.foreach { x => log.info(x.toString) })(Keep.right)
         .run()
     }
   }
@@ -310,8 +388,8 @@ class MBTAService extends Actor with ActorLogging {
 
     case MBTAService.Request.fetchVehiclesPerRoute(routes) => {
       val dst = sender()
-      Future.sequence { routes.map {
-        route => MBTAaccess.queueRequest(
+      Future.sequence { routes.map { route => 
+        MBTAaccess.queueRequest(
           HttpRequest(uri = MBTAaccess.mbtaUri(
             path  = "/vehicles",
             query = Some(s"""include=stop&filter[route]=${route.getString("id")}&api_key=${api_key}""")
