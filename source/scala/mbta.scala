@@ -21,6 +21,7 @@ import akka.http.scaladsl.model.{
 import akka.http.scaladsl.model.headers.{Host,RawHeader}
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.{Authority,NamedHost,Path}
+import akka.NotUsed
 import akka.stream.ActorMaterializer
 import akka.stream.scaladsl.Source
 import akka.util.{
@@ -158,32 +159,95 @@ class MBTAService extends Actor with ActorLogging {
             runQ
         }
     }
+
+    def mbtaUri(path: String, query: Option[String] = None) = Uri(
+      scheme      = "https",
+      path        = Uri.Path(path),
+      queryString = query,
+      fragment    = None
+    )
+
+    def queueRequest(request: HttpRequest) : Future[HttpResponse] = {
+      val retVal : Promise[HttpResponse] = Promise()
+
+      MBTAaccess.queue.map { queue =>
+        queue.offer((request,retVal)).flatMap(_ => retVal.future).recover {
+          case e: Exception => {
+            log.error(e, s"MBTAaccess.queueRequest -> ${e}")
+            HttpResponse(StatusCodes.InternalServerError)
+          }
+        }.andThen {
+          case Success(response) => log.debug(s"[RESPONSE] MBTAaccess.queueRequest(${request}) -> ${response}")
+          case Failure(t) => log.error(s"[RESPONSE] MBTAaccess.queueRequest(${request}) -> ${t}")
+        }
+      }.getOrElse {
+        Future.failed(new Exception("MBTAaccess.queueRequest could not Queue up the request. No Queue found."))
+      }
+    }
+
+    def parseMbtaResponse(entity: HttpEntity) : Future[Config] = {
+      entity
+        .withoutSizeLimit
+        .dataBytes
+        .runWith(Sink.fold(ByteString.empty)(_ ++ _))
+        .map { s => ConfigFactory.parseString(s.utf8String) }
+        .recover {
+          case e: Throwable =>
+            log.error("MBTAaccess.parseMbtaResponse -- recover -- {}", e)
+            ConfigFactory.empty
+        }
+    }
   }
   
-  MBTAaccess.runQ
+  override def preStart() : Unit = {
+    MBTAaccess.runQ
+  }
 
-  def mbtaUri(path: String, query: Option[String] = None) = Uri(
-    scheme      = "https",
-    path        = Uri.Path(path),
-    queryString = query,
-    fragment    = None
-  )
+  object RequestFlow {
+    object Request {
+      sealed trait T
+      case class Routes() extends T
+    }
 
-  def queueRequest(request: HttpRequest) : Future[HttpResponse] = {
-    val retVal : Promise[HttpResponse] = Promise()
+    object Response {
+      sealed trait T
+      case class Routes(routes: Vector[Config]) extends T
+    }
 
-    MBTAaccess.queue.map { queue =>
-      queue.offer((request,retVal)).flatMap(_ => retVal.future).recover {
-        case e: Exception => {
-          log.error(e, s"queueRequest -> ${e}")
-          HttpResponse(StatusCodes.InternalServerError)
+    def runRF = {
+      Source
+        .tick(initialDelay = FiniteDuration(3, "seconds"), interval = FiniteDuration(10, "seconds"), tick = RequestFlow.Request.Routes)
+        .buffer(size = 1, overflowStrategy = OverflowStrategy.dropHead)
+        .mapAsync[RequestFlow.Response.Routes](parallelism = 1) { _ =>
+          MBTAaccess.queueRequest(
+            HttpRequest(uri = MBTAaccess.mbtaUri(
+              path  = "/routes",
+              query = Some(s"api_key=${api_key}")
+            ))
+          )
+          .flatMap {
+            case HttpResponse(StatusCodes.OK, _, entity, _) => {
+              MBTAaccess.parseMbtaResponse(entity).map { response =>
+                RequestFlow.Response.Routes(
+                  routes = response.getObjectList("data").asScala.toVector.filter { _.toConfig.getInt("attributes.type") == 2 }.map { _.toConfig }
+                )
+              }
+            }
+
+            case HttpResponse(code, _, entity, _) => Future.successful {
+              log.error("RequestFlow.RoutesFlow.HttpResponse({})", code.toString)
+              entity.discardBytes()
+              RequestFlow.Response.Routes(routes = Vector.empty[Config])
+            }
+          }
         }
-      }.andThen {
-        case Success(response) => log.debug(s"[RESPONSE] queueRequest(${request}) -> ${response}")
-        case Failure(t) => log.error(s"[RESPONSE] queueRequest(${request}) -> ${t}")
-      }
-    }.getOrElse {
-      Future.failed(new Exception("queueRequest could not Queue up the request. No Queue found."))
+        .recover {
+          case e: Throwable =>
+            log.error("RequestFlow.RoutesFlow.recover -- {}", e)
+            RequestFlow.Response.Routes(routes = Vector.empty[Config])
+        }
+        .mapConcat { case RequestFlow.Response.Routes(routes) => routes.map { _.getString("id") } }
+        .groupBy(maxSubstreams = 32, f = { case rid => rid })
     }
   }
 
@@ -192,14 +256,14 @@ class MBTAService extends Actor with ActorLogging {
   def receive = {
     case MBTAService.Request.fetchRoutes() => {
       val dst = sender()
-      queueRequest(
-        HttpRequest(uri = mbtaUri(
+      MBTAaccess.queueRequest(
+        HttpRequest(uri = MBTAaccess.mbtaUri(
           path  = "/routes",
           query = Some(s"api_key=${api_key}")
         ))
       ).map {
         case HttpResponse(StatusCodes.OK, _, entity, _) => {
-          val resp = MBTAService.parseMbtaResponse(entity).map {
+          val resp = MBTAaccess.parseMbtaResponse(entity).map {
             cf =>
             dst ! MBTAService.Response.fetchRoutes {
               cf.getObjectList("data").asScala.toList.filter { _.toConfig.getInt("attributes.type") == 2 }.map { _.toConfig }
@@ -216,18 +280,18 @@ class MBTAService extends Actor with ActorLogging {
     case MBTAService.Request.fetchTripsPerRoute(routes) => {
       val dst = sender()
       Future.sequence { routes.map {
-        route => queueRequest(
-          HttpRequest(uri = mbtaUri(
+        route => MBTAaccess.queueRequest(
+          HttpRequest(uri = MBTAaccess.mbtaUri(
             path  = "/trips",
             query = Some(s"""filter[route]=${route.getString("id")}&api_key=${api_key}""")
           ))
         ).flatMap {
           case HttpResponse(StatusCodes.OK, _, entity, _) => {
-            MBTAService.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
+            MBTAaccess.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
           }
           case HttpResponse(code, _, entity, _) => {
             log.error(s"Got ${code}")
-            MBTAService.parseMbtaResponse(entity).map {
+            MBTAaccess.parseMbtaResponse(entity).map {
               e => log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
               List(ConfigFactory.empty)
             }
@@ -242,18 +306,18 @@ class MBTAService extends Actor with ActorLogging {
     case MBTAService.Request.fetchVehiclesPerRoute(routes) => {
       val dst = sender()
       Future.sequence { routes.map {
-        route => queueRequest(
-          HttpRequest(uri = mbtaUri(
+        route => MBTAaccess.queueRequest(
+          HttpRequest(uri = MBTAaccess.mbtaUri(
             path  = "/vehicles",
             query = Some(s"""include=stop&filter[route]=${route.getString("id")}&api_key=${api_key}""")
           ))
         ).flatMap {
           case HttpResponse(StatusCodes.OK, _, entity, _) => {
-            MBTAService.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
+            MBTAaccess.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
           }
           case HttpResponse(code, _, entity, _) => {
             log.error(s"Got ${code}")
-            MBTAService.parseMbtaResponse(entity).map {
+            MBTAaccess.parseMbtaResponse(entity).map {
               e =>
               log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
               List(ConfigFactory.empty)
@@ -269,18 +333,18 @@ class MBTAService extends Actor with ActorLogging {
     case MBTAService.Request.trackPredictionsPerRoute(routes) => {
       val dst = sender()
       Future.sequence { routes.map {
-        route => queueRequest(
-          HttpRequest(uri = mbtaUri(
+        route => MBTAaccess.queueRequest(
+          HttpRequest(uri = MBTAaccess.mbtaUri(
             path  = "/predictions",
             query = Some(s"""include=alerts&filter[route]=${route.getString("id")}&api_key=${api_key}""")
           ))
         ).flatMap {
           case HttpResponse(StatusCodes.OK, _, entity, _) => {
-            MBTAService.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
+            MBTAaccess.parseMbtaResponse(entity).map { _.getObjectList("data").asScala.toList.map { _.toConfig } }
           }
           case HttpResponse(code, _, entity, _) => {
             log.error(s"Got ${code}")
-            MBTAService.parseMbtaResponse(entity).map {
+            MBTAaccess.parseMbtaResponse(entity).map {
               e =>
               log.error(e.root().render(ConfigRenderOptions.concise().setJson(true).setFormatted(true)))
               List(ConfigFactory.empty)
@@ -327,21 +391,5 @@ object MBTAService {
   object Response {
     sealed trait T
     case class fetchRoutes(routes: List[Config]) extends T
-  }
-
-  def parseMbtaResponse(entity: HttpEntity)(implicit log: LoggingAdapter, system : ActorSystem, context : ActorRefFactory, timeout : Timeout) : Future[Config] = {
-    implicit val executionContext = system.dispatcher
-
-    entity.toStrict(5.seconds).flatMap {
-      case entity =>
-        entity.dataBytes.runWith(Sink.fold[String,ByteString] { "" } {
-          (s: String, bs: ByteString) => s + bs.decodeString("UTF-8")
-        }).map {
-          case s => ConfigFactory.parseString(s)
-        }.recover {
-          case e: Exception =>
-            ConfigFactory.empty
-        }
-    }
   }
 }
