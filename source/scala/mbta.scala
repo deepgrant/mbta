@@ -215,6 +215,7 @@ class MBTAService extends Actor with ActorLogging {
       routeId             : String,
       vehicleId           : Option[String] = None,
       stopId              : Option[String] = None,
+      tripId              : Option[String] = None,
       bearing             : Option[Int]    = None,
       directionId         : Option[Int]    = None,
       currentStatus       : Option[String] = None,
@@ -223,6 +224,9 @@ class MBTAService extends Actor with ActorLogging {
       longitude           : Option[Double] = None,
       speed               : Option[Double] = None,
       updatedAt           : Option[String] = None,
+      stopName            : Option[String] = None,
+      stopPlatformName    : Option[String] = None,
+      stopZone            : Option[String] = None,
       timeStamp           : Long           = java.time.Instant.now().toEpochMilli()
     ) extends vd
     case class VehicleDataNull() extends vd
@@ -272,6 +276,7 @@ class MBTAService extends Actor with ActorLogging {
                 routeId             = route,
                 vehicleId           = Try(r.getString("attributes.label")).toOption,
                 stopId              = Try(r.getString("relationships.stop.data.id")).toOption,
+                tripId              = Try(r.getString("relationships.trip.data.id")).toOption,
                 bearing             = Try(r.getInt("attributes.bearing")).toOption,
                 directionId         = Try(r.getInt("attributes.direction_id")).toOption,
                 currentStatus       = Try(r.getString("attributes.current_status")).toOption,
@@ -286,6 +291,46 @@ class MBTAService extends Actor with ActorLogging {
           case unExpected => {
             log.error("vehiclesPerRouteFlow unexpected input: {}", unExpected.toString)
             Vector(VehicleDataNull())
+          }
+        }
+    }
+
+    def stopIdLookupFlow : Flow[vd, vd, NotUsed] = {
+      Flow[vd]
+        .mapAsync(parallelism = 4) {
+          case vd : VehicleData => {
+            vd.stopId.map { stopId =>
+              val uri = MBTAaccess.mbtaUri(
+                path  = s"/stops/${stopId}",
+                query = Some(s"""api_key=${api_key}""")
+              )
+              
+              MBTAaccess.queueRequest(
+                HttpRequest(uri = uri)
+              ).flatMap {
+                case HttpResponse(StatusCodes.OK, _, entity, _) => {
+                  MBTAaccess.parseMbtaResponse(entity).map { r =>
+                    vd.copy(
+                      stopName         = Try(r.getString("data.attributes.name")).toOption,
+                      stopPlatformName = Try(r.getString("data.attributes.platform_name")).toOption,
+                      stopZone         = Try(r.getString("data.relationships.zone.data.id")).toOption
+                    )
+                  }
+                }
+                case HttpResponse(code, _, entity, _) => Future.successful {
+                  log.error("stopIdLookupFlow returned unexpected code: {} with uri: {}", code.toString, uri.toString)
+                  entity.discardBytes()
+                  vd
+                }
+              }
+            }.getOrElse {
+              Future.successful(vd)
+            }
+          }
+
+          case unExpected => Future.successful {
+            log.error("stopIdLookupFlow unexpected input: {}", unExpected.toString)
+            VehicleDataNull()
           }
         }
     }
@@ -326,8 +371,9 @@ class MBTAService extends Actor with ActorLogging {
         .groupBy(maxSubstreams = 32, f = { case rid => rid })
         .via(vehiclesPerRouteRawFlow)
         .via(vehiclesPerRouteFlow)
+        .via(stopIdLookupFlow)
         .mergeSubstreams
-        .toMat(Sink.foreach { x => log.info(x.toString) })(Keep.right)
+        .toMat(Sink.foreach { x => log.info(MBTAService.pp(x)) })(Keep.right)
         .run()
     }
   }
@@ -462,6 +508,8 @@ class MBTAService extends Actor with ActorLogging {
 }
 
 object MBTAService {
+  def pp(x: Any) = pprint.PPrinter.Color.tokenize(x, width = 132, height = 1000).mkString
+
   object Request {
     sealed trait T
     case class fetchRoutes() extends T
