@@ -23,7 +23,6 @@ import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.{Authority,NamedHost,Path}
 import akka.NotUsed
 import akka.stream.ActorMaterializer
-import akka.stream.scaladsl.Source
 import akka.util.{
   ByteString,
   Timeout
@@ -34,6 +33,7 @@ import akka.stream.{
   OverflowStrategy
 }
 import akka.stream.scaladsl.{
+  Keep,
   Flow,
   Sink,
   Source,
@@ -248,8 +248,13 @@ class MBTAService extends Actor with ActorLogging {
         }
         .mapConcat { case RequestFlow.Response.Routes(routes) => routes.map { _.getString("id") } }
         .groupBy(maxSubstreams = 32, f = { case rid => rid })
+        .mergeSubstreams
+        .toMat(Sink.foreach { route => log.info(route) })(Keep.right)
+        .run()
     }
   }
+
+  RequestFlow.runRF
 
   self ! MBTAService.Request.trackVehiclesPerRoute()
 
