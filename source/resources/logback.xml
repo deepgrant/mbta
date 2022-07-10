@@ -6,38 +6,6 @@
     </encoder>
   </appender>
 
-  <appender name="VEHICLES" class="ch.qos.logback.core.rolling.RollingFileAppender">
-    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-      <fileNamePattern>/tmp/deepgrant-MBTA-vehicles.%d{yyyy-MM-dd}_%i.log.gz</fileNamePattern>
-      <maxHistory>30</maxHistory>
-      <maxFileSize>10MB</maxFileSize>
-      <totalSizeCap>50MB</totalSizeCap>
-    </rollingPolicy>
-    <encoder>
-      <pattern>{"@timestamp":"%date{ISO8601}", "@level": "%level", "@data":%m}%n</pattern>
-    </encoder>
-  </appender>
-
-  <logger name="vehicles" additivity="false" level="TRACE">
-      <appender-ref ref="VEHICLES"/>
-  </logger>
-
-  <appender name="PREDICTIONS" class="ch.qos.logback.core.rolling.RollingFileAppender">
-    <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-      <fileNamePattern>/tmp/deepgrant-MBTA-predictions.%d{yyyy-MM-dd}_%i.log.gz</fileNamePattern>
-      <maxHistory>30</maxHistory>
-      <maxFileSize>10MB</maxFileSize>
-      <totalSizeCap>50MB</totalSizeCap>
-    </rollingPolicy>
-    <encoder>
-      <pattern>{"@timestamp":"%date{ISO8601}", "@level": "%level", "@data":%m}%n</pattern>
-    </encoder>
-  </appender>
-
-  <logger name="predictions" additivity="false" level="TRACE">
-      <appender-ref ref="PREDICTIONS"/>
-  </logger>
-
   <!-- Configure so that it outputs to both console and log file -->
   <root level="debug">
     <appender-ref ref="STDOUT"/>
