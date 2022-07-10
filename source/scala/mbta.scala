@@ -348,7 +348,7 @@ class MBTAService extends Actor with ActorLogging {
             //
             HttpRequest(uri = MBTAaccess.mbtaUri(
               path  = "/routes",
-              query = Some(s"filter[type]=0,1,4&api_key=${api_key}")
+              query = Some(s"filter[type]=0,1,2,4&api_key=${api_key}")
             ))
           )
           .flatMap {
