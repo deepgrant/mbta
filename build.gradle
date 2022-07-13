@@ -51,11 +51,13 @@ dependencies {
     , libs.akka_slf4j
     , libs.akka_stream
     , libs.akka_stream_json
+    , libs.akka_stream_alpakka_s3
     , libs.sprayJSON
     , libs.slf4j
     , libs.logback_classic
     , libs.logback_core
     , libs.pprint
+    , libs.apache_commons_io
     ]
   )
   

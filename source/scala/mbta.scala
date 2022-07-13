@@ -49,11 +49,25 @@ import akka.http.scaladsl.settings.{
 
 import collection.JavaConverters._
 
+import com.amazonaws.auth.{
+  AWSCredentials, 
+  AWSSessionCredentials,
+  AWSCredentialsProvider,
+  AWSStaticCredentialsProvider,
+  BasicAWSCredentials,
+  EnvironmentVariableCredentialsProvider,
+  STSAssumeRoleSessionCredentialsProvider
+}
+import com.amazonaws.client.builder.AwsClientBuilder
+import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder
+
 import com.typesafe.config.{
   Config,
   ConfigFactory,
   ConfigRenderOptions
 }
+
+import org.apache.commons.io.IOUtils
 
 import org.slf4j.{
   LoggerFactory
@@ -104,8 +118,144 @@ class MBTAService extends Actor with ActorLogging {
 
   val api_key = sys.env("mbta_api_key")
 
-  val vehiclesLogger = LoggerFactory.getLogger("vehicles")
-  val predictionsLogger = LoggerFactory.getLogger("predictions")
+  object Config {
+    lazy val config = Try {
+      val resource = getClass.getClassLoader.getResourceAsStream("MBTA.conf")
+      val source   = IOUtils.toString(resource, java.nio.charset.Charset.forName("UTF8"))
+      resource.close
+      ConfigFactory.parseString(source)
+    }.recover {
+      case e: Throwable =>
+        log.warning("MBTAService.Config.config -- was not processed successfully -- {}", e)
+        ConfigFactory.empty
+    }
+
+    def AccessKey : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.credentials.accessKey")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("AWS_ACCESS_KEY_ID")
+            }
+          }
+        }
+      }
+    }
+
+    def SecretKey : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.credentials.secretKey")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("AWS_SECRET_ACCESS_KEY")
+            }
+          }
+        }
+      }
+    }
+
+    def Region : String = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.credentials.region")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("AWS_REGION")
+            }
+          }
+        }
+      }.getOrElse("US_EAST_1")
+    }
+
+    def S3RoleArn : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.credentials.s3AccessRole")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("MBTA_S3_ROLEARN")
+            }
+          }
+        }
+      }
+    }
+
+    def S3RoleArnExternalId : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.credentials.s3AccessRoleExternalId")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("MBTA_S3_ROLEARN_EXTERNAL_ID")
+            }
+          }
+        }
+      }
+    }
+  }
+
+  object Credentials {
+    private[this] lazy val longTermCredentials : AWSStaticCredentialsProvider = new AWSStaticCredentialsProvider(
+      {
+        Config.AccessKey.flatMap { ak => 
+          Config.SecretKey.map { sk =>
+            new BasicAWSCredentials(ak, sk)
+          }
+        }.getOrElse {
+          (new com.amazonaws.auth.DefaultAWSCredentialsProviderChain()).getCredentials
+        }
+      }
+    )
+
+    def operationalCredentials : AWSCredentialsProvider = {
+      Config.S3RoleArn.map { roleArn => 
+        val client = AWSSecurityTokenServiceClientBuilder
+          .standard
+          .withEndpointConfiguration({
+            val region = 
+
+            log.info("Credentials.shortTermCredentials.AWSSecurityTokenServiceClientBuilder(endpoint={})", Config.Region)
+
+            new AwsClientBuilder.EndpointConfiguration(
+              s"https://sts.${Config.Region.toLowerCase}.amazonaws.com",
+              Config.Region
+            )
+          })
+          .withCredentials(longTermCredentials)
+          .build
+
+        Config.S3RoleArnExternalId.map { externalId =>
+          new STSAssumeRoleSessionCredentialsProvider.Builder(roleArn, "MBTA").withExternalId(externalId)
+        }.getOrElse {
+          new STSAssumeRoleSessionCredentialsProvider.Builder(roleArn, "MBTA")
+        }.withRoleSessionDurationSeconds(300).withStsClient(client).build
+      }.getOrElse {
+        longTermCredentials
+      }
+    }
+  }
+
+  object S3 {
+    import com.amazonaws.services.s3.{
+      AmazonS3, 
+      AmazonS3ClientBuilder
+    }
+
+    lazy val client = AmazonS3ClientBuilder
+      .standard()
+      .withEndpointConfiguration(
+        new AwsClientBuilder.EndpointConfiguration(s"https://s3.${Config.Region.toLowerCase}.amazonaws.com", Config.Region)
+      )
+      .withCredentials(new AWSStaticCredentialsProvider(Credentials.operationalCredentials.getCredentials))
+      .withPathStyleAccessEnabled(true).build()
+  }
 
   object MBTAaccess {
     def transportSettings = ConnectionPoolSettings(system)

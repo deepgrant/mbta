@@ -3,19 +3,6 @@ import org.apache.tools.ant.taskdefs.condition.Os
 ext {
   versions = [:]
   libs = [:]
-
-  platform = {
-    arch = Os.OS_ARCH
-    println("ARCH: ${arch}")
-    if (arch == "amd64") {
-      arch = "x86_64"
-    }
-    if (Os.isFamily(Os.FAMILY_MAC)) {
-      "macosx-${arch}"
-    } else {
-      "linux-${arch}"
-    }
-  }
 }
 
 versions +=
@@ -28,6 +15,8 @@ versions +=
   , akka: "2.6.15"
   , akkaHttp: "10.2.9"
   , akkaStreamJson: "3.4.0"
+  , akkaStreamAlpakkaS3: "3.0.4"
+  , apacheCommonsIo: "2.11.0"
   , slf4j: "1.7.25"
   , logback: "1.2.9"
   , pprint: "0.7.3"
@@ -49,8 +38,10 @@ libs +=
   , akka_slf4j: "com.typesafe.akka:akka-slf4j_${versions.scala}:${versions.akka}"
   , akka_stream: "com.typesafe.akka:akka-stream_${versions.scala}:${versions.akka}"
   , akka_stream_json: "de.knutwalker:akka-stream-json_${versions.scala}:${versions.akkaStreamJson}"
+  , akka_stream_alpakka_s3: "com.lightbend.akka:akka-stream-alpakka-s3_${versions.scala}:${versions.akkaStreamAlpakkaS3}"
   , slf4j: "org.slf4j:slf4j-api:${versions.slf4j}"
   , logback_classic: "ch.qos.logback:logback-classic:${versions.logback}"
   , logback_core: "ch.qos.logback:logback-core:${versions.logback}"
   , pprint: "com.lihaoyi:pprint_${versions.scala}:${versions.pprint}"
+  , apache_commons_io: "commons-io:commons-io:${versions.apacheCommonsIo}"
   ]
