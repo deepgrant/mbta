@@ -58,6 +58,7 @@ dependencies {
     , libs.logback_core
     , libs.pprint
     , libs.apache_commons_io
+    , libs.awsSdkServicesSts
     ]
   )
   

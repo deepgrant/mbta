@@ -53,7 +53,7 @@ import com.amazonaws.auth.{
   AWSCredentials, 
   AWSSessionCredentials,
   AWSCredentialsProvider,
-  AWSStaticCredentialsProvider,
+  //AWSStaticCredentialsProvider,
   BasicAWSCredentials,
   EnvironmentVariableCredentialsProvider,
   STSAssumeRoleSessionCredentialsProvider
@@ -199,62 +199,108 @@ class MBTAService extends Actor with ActorLogging {
         }
       }
     }
+
+    def getStorageBucket : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.s3.bucket")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("MBTA_STORAGE_BUCKET")
+            }
+          }
+        }
+      }
+    }
+
+    def getStorageBucketPrefix : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.aws.s3.prefix")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("MBTA_STORAGE_PREFIX")
+            }
+          }
+        }
+      }
+    }
   }
 
   object Credentials {
-    private[this] lazy val longTermCredentials : AWSStaticCredentialsProvider = new AWSStaticCredentialsProvider(
+    import software.amazon.awssdk.auth.credentials.{
+      AwsBasicCredentials,
+      AwsCredentialsProvider,
+      DefaultCredentialsProvider,
+      StaticCredentialsProvider
+    }
+    import software.amazon.awssdk.services.sts.auth.{
+      StsAssumeRoleCredentialsProvider
+    }
+    import software.amazon.awssdk.services.sts.model.AssumeRoleRequest
+
+    private[this] lazy val longTermCredentials : StaticCredentialsProvider = StaticCredentialsProvider.create(
       {
         Config.AccessKey.flatMap { ak => 
           Config.SecretKey.map { sk =>
-            new BasicAWSCredentials(ak, sk)
+            AwsBasicCredentials.create(ak, sk)
           }
         }.getOrElse {
-          (new com.amazonaws.auth.DefaultAWSCredentialsProviderChain()).getCredentials
+          val defaultCredentials = DefaultCredentialsProvider.builder().build().resolveCredentials()
+          AwsBasicCredentials.create(defaultCredentials.accessKeyId(), defaultCredentials.secretAccessKey())
         }
       }
     )
 
-    def operationalCredentials : AWSCredentialsProvider = {
-      Config.S3RoleArn.map { roleArn => 
-        val client = AWSSecurityTokenServiceClientBuilder
-          .standard
-          .withEndpointConfiguration({
-            val region = 
+    def operationalCredentials : AwsCredentialsProvider = {
+      Config.S3RoleArn.map { roleArn =>
+        val arr = {
+          val arr = AssumeRoleRequest
+            .builder()
+            .roleArn(roleArn)
+            .roleSessionName("MBTA")
+            .durationSeconds(300)
 
-            log.info("Credentials.shortTermCredentials.AWSSecurityTokenServiceClientBuilder(endpoint={})", Config.Region)
+            Config.S3RoleArnExternalId.map { externalId =>
+              arr.externalId(externalId)
+            }.getOrElse(arr).build()
+        }
 
-            new AwsClientBuilder.EndpointConfiguration(
-              s"https://sts.${Config.Region.toLowerCase}.amazonaws.com",
-              Config.Region
-            )
-          })
-          .withCredentials(longTermCredentials)
-          .build
-
-        Config.S3RoleArnExternalId.map { externalId =>
-          new STSAssumeRoleSessionCredentialsProvider.Builder(roleArn, "MBTA").withExternalId(externalId)
-        }.getOrElse {
-          new STSAssumeRoleSessionCredentialsProvider.Builder(roleArn, "MBTA")
-        }.withRoleSessionDurationSeconds(300).withStsClient(client).build
+        StsAssumeRoleCredentialsProvider.builder()
+          .refreshRequest(arr)
+          .build()
       }.getOrElse {
         longTermCredentials
       }
     }
   }
 
-  object S3 {
+  object S3Access {
+    import akka.stream.alpakka.s3.{
+      MultipartUploadResult,
+      S3Attributes,
+      S3Ext,
+      S3Settings
+    }
+    import akka.stream.alpakka.s3.scaladsl.{
+      S3
+    }
+
     import com.amazonaws.services.s3.{
       AmazonS3, 
       AmazonS3ClientBuilder
     }
 
-    lazy val client = AmazonS3ClientBuilder
-      .standard()
-      .withEndpointConfiguration(
-        new AwsClientBuilder.EndpointConfiguration(s"https://s3.${Config.Region.toLowerCase}.amazonaws.com", Config.Region)
-      )
-      .withCredentials(new AWSStaticCredentialsProvider(Credentials.operationalCredentials.getCredentials))
-      .withPathStyleAccessEnabled(true).build()
+    lazy val s3Settings = S3Ext(system)
+      .settings
+      .withCredentialsProvider(Credentials.operationalCredentials)
+
+    def s3Sink(bucket: String, bucketKey: String) : Sink[ByteString, Future[MultipartUploadResult]] =
+      S3
+        .multipartUpload(bucket, bucketKey)
+        .withAttributes(S3Attributes.settings(s3Settings))
   }
 
   object MBTAaccess {

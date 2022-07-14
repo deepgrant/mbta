@@ -20,6 +20,7 @@ versions +=
   , slf4j: "1.7.25"
   , logback: "1.2.9"
   , pprint: "0.7.3"
+  , awsSdkServicesSts: "2.17.230"
   ]
 
 libs +=
@@ -32,6 +33,7 @@ libs +=
   , sprayJSON: "io.spray:spray-json_${versions.scala}:${versions.sprayJSON}"
   , s3aws: "com.amazonaws:aws-java-sdk-s3:${versions.aws}"
   , stsaws: "com.amazonaws:aws-java-sdk-sts:${versions.aws}"
+  , awsSdkServicesSts: "software.amazon.awssdk:sts:${versions.awsSdkServicesSts}"
   , akka_actor: "com.typesafe.akka:akka-actor_${versions.scala}:${versions.akka}"
   , akka_cluster: "com.typesafe.akka:akka-cluster_${versions.scala}:${versions.akka}"
   , akka_http: "com.typesafe.akka:akka-http_${versions.scala}:${versions.akkaHttp}"
