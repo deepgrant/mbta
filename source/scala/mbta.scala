@@ -18,9 +18,16 @@ import akka.http.scaladsl.model.{
   StatusCodes,
   Uri
 }
-import akka.http.scaladsl.model.headers.{Host,RawHeader}
+import akka.http.scaladsl.model.headers.{
+  Host,
+  RawHeader
+}
 import akka.http.scaladsl.model.Uri
-import akka.http.scaladsl.model.Uri.{Authority,NamedHost,Path}
+import akka.http.scaladsl.model.Uri.{
+  Authority,
+  NamedHost,
+  Path
+}
 import akka.NotUsed
 import akka.stream.ActorMaterializer
 import akka.util.{
@@ -48,18 +55,6 @@ import akka.http.scaladsl.settings.{
 }
 
 import collection.JavaConverters._
-
-import com.amazonaws.auth.{
-  AWSCredentials, 
-  AWSSessionCredentials,
-  AWSCredentialsProvider,
-  //AWSStaticCredentialsProvider,
-  BasicAWSCredentials,
-  EnvironmentVariableCredentialsProvider,
-  STSAssumeRoleSessionCredentialsProvider
-}
-import com.amazonaws.client.builder.AwsClientBuilder
-import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder
 
 import com.typesafe.config.{
   Config,
@@ -90,7 +85,6 @@ import scala.util.{
   Failure,
   Try
 }
-
 
 object MBTAMain extends App {
   import java.util.concurrent.TimeUnit.{SECONDS => seconds}
@@ -286,11 +280,6 @@ class MBTAService extends Actor with ActorLogging {
     }
     import akka.stream.alpakka.s3.scaladsl.{
       S3
-    }
-
-    import com.amazonaws.services.s3.{
-      AmazonS3, 
-      AmazonS3ClientBuilder
     }
 
     lazy val s3Settings = S3Ext(system)

@@ -43,8 +43,6 @@ dependencies {
     , libs.scalaReflect
     , libs.scalaParser
     , libs.scalaXML
-    , libs.s3aws
-    , libs.stsaws
     , libs.akka_actor
     , libs.akka_cluster
     , libs.akka_http
