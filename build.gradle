@@ -15,28 +15,6 @@ repositories {
   mavenCentral()
 }
 
-libs +=
-  [ scala: "org.scala-lang:scala-library:${versions.scala}.7"
-  , scalaCompiler: "org.scala-lang:scala-compiler:${versions.scala}.7"
-  , scalaReflect: "org.scala-lang:scala-reflect:${versions.scala}.7"
-  , scalaParser: "org.scala-lang.modules:scala-parser-combinators_${versions.scala}:${versions.scalaParser}"
-  , scalaXML: "org.scala-lang.modules:scala-xml_${versions.scala}:${versions.scalaXml}"
-  , scalaTest: "org.scalatest:scalatest_${versions.scala}:${versions.scalaTest}"
-  , sprayJSON: "io.spray:spray-json_${versions.scala}:${versions.sprayJSON}"
-  , s3aws: "com.amazonaws:aws-java-sdk-s3:${versions.aws}"
-  , stsaws: "com.amazonaws:aws-java-sdk-sts:${versions.aws}"
-  , akka_actor: "com.typesafe.akka:akka-actor_${versions.scala}:${versions.akka}"
-  , akka_cluster: "com.typesafe.akka:akka-cluster_${versions.scala}:${versions.akka}"
-  , akka_http: "com.typesafe.akka:akka-http_${versions.scala}:${versions.akkaHttp}"
-  , akka_slf4j: "com.typesafe.akka:akka-slf4j_${versions.scala}:${versions.akka}"
-  , akka_stream: "com.typesafe.akka:akka-stream_${versions.scala}:${versions.akka}"
-  , akka_stream_json: "de.knutwalker:akka-stream-json_${versions.scala}:${versions.akkaStreamJson}"
-  , slf4j: "org.slf4j:slf4j-api:${versions.slf4j}"
-  , logback_classic: "ch.qos.logback:logback-classic:${versions.logback}"
-  , logback_core: "ch.qos.logback:logback-core:${versions.logback}"
-  , pprint: "com.lihaoyi:pprint_${versions.scala}:${versions.pprint}"
-  ]
-
 dependencies {
   compile(
     [ libs.scala
@@ -46,6 +24,7 @@ dependencies {
     , libs.akka_actor
     , libs.akka_cluster
     , libs.akka_http
+    , libs.akka_http_xml
     , libs.akka_slf4j
     , libs.akka_stream
     , libs.akka_stream_json

@@ -34,6 +34,7 @@ libs +=
   , akka_actor: "com.typesafe.akka:akka-actor_${versions.scala}:${versions.akka}"
   , akka_cluster: "com.typesafe.akka:akka-cluster_${versions.scala}:${versions.akka}"
   , akka_http: "com.typesafe.akka:akka-http_${versions.scala}:${versions.akkaHttp}"
+  , akka_http_xml: "com.typesafe.akka:akka-http-xml_${versions.scala}:${versions.akkaHttp}"
   , akka_slf4j: "com.typesafe.akka:akka-slf4j_${versions.scala}:${versions.akka}"
   , akka_stream: "com.typesafe.akka:akka-stream_${versions.scala}:${versions.akka}"
   , akka_stream_json: "de.knutwalker:akka-stream-json_${versions.scala}:${versions.akkaStreamJson}"
