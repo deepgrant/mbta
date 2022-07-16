@@ -3,6 +3,7 @@ package mbta.actor
 import akka.actor._
 import akka.cluster._
 import akka.cluster.ClusterEvent._
+import akka.Done
 import akka.event.{
   Logging,
   LoggingAdapter,
@@ -85,6 +86,8 @@ import scala.util.{
   Failure,
   Try
 }
+
+import spray.json._
 
 object MBTAMain extends App {
   import java.util.concurrent.TimeUnit.{SECONDS => seconds}
@@ -396,6 +399,7 @@ class MBTAService extends Actor with ActorLogging {
     case class Routes(routes: Vector[Config]) extends rd
 
     sealed trait vd
+    case class FetchRoutes() extends vd
     case class VehicleRoute(route: String) extends vd
     case class VehiclesPerRouteRaw(route: String, rawVehicles: Vector[Config]) extends vd
     case class VehicleData(
@@ -416,6 +420,7 @@ class MBTAService extends Actor with ActorLogging {
       stopZone            : Option[String] = None,
       timeStamp           : Long           = java.time.Instant.now().toEpochMilli()
     ) extends vd
+    case class VehicleDataAsJsonString(j: ByteString) extends vd
     case class VehicleDataNull() extends vd
 
     def vehiclesPerRouteRawFlow : Flow[vd, vd, NotUsed] = {
@@ -522,10 +527,26 @@ class MBTAService extends Actor with ActorLogging {
         }
     }
 
-    def runRF = {
-      Source
-        .tick(initialDelay = FiniteDuration(1, "seconds"), interval = FiniteDuration(10, "seconds"), tick = TickRoutes)
-        .buffer(size = 1, overflowStrategy = OverflowStrategy.dropHead)
+    def renderAsJson : Flow[vd, vd, NotUsed] = {
+      Flow[vd]
+        .wireTap { v => {
+          log.info("renderAsJson -- {}", MBTAService.pp(v))
+        }}
+        .map { 
+          case v: VehicleData =>
+            import DefaultJsonProtocol._
+
+            implicit val VehicleDataFormat = jsonFormat16(VehicleData)
+            ByteString(v.toJson.toString + s" -- ${java.util.UUID.randomUUID}\n", "UTF-8")
+          case _ => ByteString.empty
+        }
+        .fold(ByteString.empty)( _ ++ _ )
+        .map(VehicleDataAsJsonString(_))
+        // .to(S3Access.s3Sink("cs-gmills-mbta", s"MBTA/vehicle/positions/${java.time.Instant.now().toEpochMilli()}.json"))
+    }
+
+    def fetchRoutes : Flow[vd, vd, NotUsed] = {
+      Flow[vd]
         .mapAsync[Routes](parallelism = 1) { _ =>
           MBTAaccess.queueRequest(
             //
@@ -558,12 +579,33 @@ class MBTAService extends Actor with ActorLogging {
             Routes(routes = Vector.empty[Config])
         }
         .mapConcat { case Routes(routes) => routes.map { r => VehicleRoute(route = r.getString("id")) } }
+    }
+
+    def runFetchFlows : Future[Done] = {
+      Source
+        .single(FetchRoutes())
+        .via(fetchRoutes)
         .groupBy(maxSubstreams = 128, f = { case rid => rid })
         .via(vehiclesPerRouteRawFlow)
         .via(vehiclesPerRouteFlow)
         .via(stopIdLookupFlow)
+        .via(renderAsJson)
         .mergeSubstreams
-        .toMat(Sink.foreach { x => log.info(MBTAService.pp(x)) })(Keep.right)
+        .toMat(Sink.foreach { 
+          case VehicleDataAsJsonString(x) => log.info(x.utf8String) 
+          case _ => 
+        })(Keep.right)
+        .run()
+    }
+
+    def runRF = {
+      Source
+        .tick(initialDelay = FiniteDuration(1, "seconds"), interval = FiniteDuration(15, "seconds"), tick = TickRoutes)
+        .buffer(size = 1, overflowStrategy = OverflowStrategy.dropHead)
+        .mapAsync[Done](parallelism = 1) { _ =>
+          runFetchFlows
+        }
+        .toMat(Sink.ignore)(Keep.right)
         .run()
     }
   }
@@ -577,7 +619,7 @@ class MBTAService extends Actor with ActorLogging {
 }
 
 object MBTAService {
-  def pp(x: Any) = pprint.PPrinter.Color.tokenize(x, width = 132, height = 1000).mkString
+  def pp(x: Any) = pprint.PPrinter.Color.tokenize(x, width = 512, height = 1000).mkString
 
   object Request {
     sealed trait T

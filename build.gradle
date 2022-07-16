@@ -36,6 +36,7 @@ dependencies {
     , libs.pprint
     , libs.apache_commons_io
     , libs.awsSdkServicesSts
+    , libs.sprayJSON
     ]
   )
   
