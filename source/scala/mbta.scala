@@ -240,7 +240,7 @@ class MBTAService extends Actor with ActorLogging {
 
     private[this] lazy val longTermCredentials : StaticCredentialsProvider = StaticCredentialsProvider.create(
       {
-        Config.AccessKey.flatMap { ak => 
+        Config.AccessKey.flatMap { ak =>
           Config.SecretKey.map { sk =>
             AwsBasicCredentials.create(ak, sk)
           }
@@ -289,10 +289,20 @@ class MBTAService extends Actor with ActorLogging {
       .settings
       .withCredentialsProvider(Credentials.operationalCredentials)
 
-    def s3Sink(bucket: String, bucketKey: String) : Sink[ByteString, Future[MultipartUploadResult]] =
+    def s3Sink(bucket: String, bucketKey: String) : Sink[ByteString, Future[MultipartUploadResult]] = {
       S3
         .multipartUpload(bucket, bucketKey)
         .withAttributes(S3Attributes.settings(s3Settings))
+    }
+
+    def putObject(vj: ByteString, bucket: String, bucketKey: String) = {
+      Source.single(vj).runWith(s3Sink(bucket, bucketKey))
+        .recover {
+          case e: Throwable =>
+            log.error("S3Access.putObject -- recoverWith -- {}", e)
+            e
+        }
+    }
   }
 
   object MBTAaccess {
@@ -388,7 +398,7 @@ class MBTAService extends Actor with ActorLogging {
         }
     }
   }
-  
+
   override def preStart() : Unit = {
     MBTAaccess.runQ
   }
@@ -420,7 +430,7 @@ class MBTAService extends Actor with ActorLogging {
       stopZone            : Option[String] = None,
       timeStamp           : Long           = java.time.Instant.now().toEpochMilli()
     ) extends vd
-    case class VehicleDataAsJsonString(j: ByteString) extends vd
+    case class VehicleDataAsJsonString(routeId: String, j: ByteString) extends vd
     case class VehicleDataNull() extends vd
 
     def vehiclesPerRouteRawFlow : Flow[vd, vd, NotUsed] = {
@@ -496,7 +506,7 @@ class MBTAService extends Actor with ActorLogging {
                 path  = s"/stops/${stopId}",
                 query = Some(s"""api_key=${api_key}""")
               )
-              
+
               MBTAaccess.queueRequest(
                 HttpRequest(uri = uri)
               ).flatMap {
@@ -532,17 +542,30 @@ class MBTAService extends Actor with ActorLogging {
         .wireTap { v => {
           log.info("renderAsJson -- {}", MBTAService.pp(v))
         }}
-        .map { 
+        .map {
           case v: VehicleData =>
             import DefaultJsonProtocol._
 
             implicit val VehicleDataFormat = jsonFormat16(VehicleData)
-            ByteString(v.toJson.toString + s" -- ${java.util.UUID.randomUUID}\n", "UTF-8")
-          case _ => ByteString.empty
+            VehicleDataAsJsonString(v.routeId, ByteString(v.toJson.toString + "\n", "UTF-8"))
+
+          case _ => VehicleDataNull()
         }
-        .fold(ByteString.empty)( _ ++ _ )
-        .map(VehicleDataAsJsonString(_))
-        // .to(S3Access.s3Sink("cs-gmills-mbta", s"MBTA/vehicle/positions/${java.time.Instant.now().toEpochMilli()}.json"))
+        .fold(VehicleDataAsJsonString("", ByteString.empty)) {
+          case (acc, v: VehicleDataAsJsonString) => VehicleDataAsJsonString(v.routeId, acc.j ++ v.j)
+          case (acc, _) => acc
+        }
+    }
+
+    def pushToS3 : Flow[vd, vd, NotUsed] = {
+      Flow[vd]
+        .mapAsync(parallelism = 1) {
+          case vj : VehicleDataAsJsonString  =>
+            S3Access.putObject(vj.j, "cs-gmills-mbta", s"MBTA/vehicle/positions/${vj.routeId}/${java.time.Instant.now().toEpochMilli()}.json").map { _ => vj }
+          case _ => Future.successful {
+            VehicleDataAsJsonString("", ByteString.empty)
+          }
+        }
     }
 
     def fetchRoutes : Flow[vd, vd, NotUsed] = {
@@ -590,10 +613,11 @@ class MBTAService extends Actor with ActorLogging {
         .via(vehiclesPerRouteFlow)
         .via(stopIdLookupFlow)
         .via(renderAsJson)
+        .via(pushToS3)
         .mergeSubstreams
-        .toMat(Sink.foreach { 
-          case VehicleDataAsJsonString(x) => log.info(x.utf8String) 
-          case _ => 
+        .toMat(Sink.foreach {
+          case VehicleDataAsJsonString(_, x) => log.info(x.utf8String)
+          case _ =>
         })(Keep.right)
         .run()
     }
