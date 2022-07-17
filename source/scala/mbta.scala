@@ -410,8 +410,15 @@ class MBTAService extends Actor with ActorLogging {
 
     sealed trait vd
     case class FetchRoutes() extends vd
-    case class VehicleRoute(route: String) extends vd
-    case class VehiclesPerRouteRaw(route: String, rawVehicles: Vector[Config]) extends vd
+    case class VehicleRoute(
+      route            : String,
+      directionNames   : Vector[String],
+      destinationNames : Vector[String],
+    ) extends vd
+    case class VehiclesPerRouteRaw(
+      route            : VehicleRoute,
+      rawVehicles      : Vector[Config]
+    ) extends vd
     case class VehicleData(
       routeId             : String,
       vehicleId           : Option[String] = None,
@@ -428,7 +435,9 @@ class MBTAService extends Actor with ActorLogging {
       stopName            : Option[String] = None,
       stopPlatformName    : Option[String] = None,
       stopZone            : Option[String] = None,
-      timeStamp           : Long           = java.time.Instant.now().toEpochMilli()
+      timeStamp           : Long           = java.time.Instant.now().toEpochMilli(),
+      direction           : Option[String] = None,
+      destination         : Option[String] = None
     ) extends vd
     case class VehicleDataAsJsonString(routeId: String, j: ByteString) extends vd
     case class VehicleDataNull() extends vd
@@ -436,7 +445,7 @@ class MBTAService extends Actor with ActorLogging {
     def vehiclesPerRouteRawFlow : Flow[vd, vd, NotUsed] = {
       Flow[vd]
         .mapAsync(parallelism = 12) {
-          case VehicleRoute(route) => {
+          case vr @ VehicleRoute(route, _, _) => {
             MBTAaccess.queueRequest(
               HttpRequest(uri = MBTAaccess.mbtaUri(
                 path  = "/vehicles",
@@ -447,7 +456,7 @@ class MBTAService extends Actor with ActorLogging {
                 MBTAaccess.parseMbtaResponse(entity).map { resp =>
                   log.info("vehiclesPerRouteRawFlow({}) returned: OK", route)
                   VehiclesPerRouteRaw(
-                    route       = route,
+                    route       = vr,
                     rawVehicles = resp.getObjectList("data").asScala.toVector.map { _.toConfig }
                   )
                 }
@@ -456,7 +465,7 @@ class MBTAService extends Actor with ActorLogging {
                 log.error("vehiclesPerRouteFlow returned unexpected code: {}", code.toString)
                 entity.discardBytes()
                 VehiclesPerRouteRaw(
-                  route       = route,
+                  route       = vr,
                   rawVehicles = Vector.empty[Config]
                 )
               }
@@ -474,19 +483,23 @@ class MBTAService extends Actor with ActorLogging {
         .mapConcat {
           case VehiclesPerRouteRaw(route, rv) => {
             rv.map { r =>
+              val directionId : Try[Int] = Try(r.getInt("attributes.direction_id"))
+
               VehicleData(
-                routeId             = route,
+                routeId             = route.route,
                 vehicleId           = Try(r.getString("attributes.label")).toOption,
                 stopId              = Try(r.getString("relationships.stop.data.id")).toOption,
                 tripId              = Try(r.getString("relationships.trip.data.id")).toOption,
                 bearing             = Try(r.getInt("attributes.bearing")).toOption,
-                directionId         = Try(r.getInt("attributes.direction_id")).toOption,
+                directionId         = directionId.toOption,
                 currentStatus       = Try(r.getString("attributes.current_status")).toOption,
                 currentStopSequence = Try(r.getInt("attributes.current_stop_sequence")).toOption,
                 latitude            = Try(r.getDouble("attributes.latitude")).toOption,
                 longitude           = Try(r.getDouble("attributes.longitude")).toOption,
                 speed               = Try(r.getDouble("attributes.speed")).toOption,
-                updatedAt           = Try(r.getString("attributes.updated_at")).toOption
+                updatedAt           = Try(r.getString("attributes.updated_at")).toOption,
+                direction           = directionId.flatMap { id => Try(route.directionNames(id)) }.toOption,
+                destination         = directionId.flatMap { id => Try(route.destinationNames(id)) }.toOption
               )
             }
           }
@@ -546,7 +559,7 @@ class MBTAService extends Actor with ActorLogging {
           case v: VehicleData =>
             import DefaultJsonProtocol._
 
-            implicit val VehicleDataFormat = jsonFormat16(VehicleData)
+            implicit val VehicleDataFormat = jsonFormat18(VehicleData)
             VehicleDataAsJsonString(v.routeId, ByteString(v.toJson.toString + "\n", "UTF-8"))
 
           case _ => VehicleDataNull()
@@ -560,8 +573,15 @@ class MBTAService extends Actor with ActorLogging {
     def pushToS3 : Flow[vd, vd, NotUsed] = {
       Flow[vd]
         .mapAsync(parallelism = 1) {
-          case vj : VehicleDataAsJsonString  =>
-            S3Access.putObject(vj.j, "cs-gmills-mbta", s"MBTA/vehicle/positions/${vj.routeId}/${java.time.Instant.now().toEpochMilli()}.json").map { _ => vj }
+          case vj : VehicleDataAsJsonString  => {
+            Config.getStorageBucket.flatMap { bucket =>
+              Config.getStorageBucketPrefix.map { prefix =>
+                S3Access.putObject(vj.j, bucket, s"${prefix}/${vj.routeId}/${java.time.Instant.now().toEpochMilli()}.json").map { _ => vj }
+              }
+            }
+          }.getOrElse(Future.successful {
+            VehicleDataAsJsonString("", ByteString.empty)
+          })
           case _ => Future.successful {
             VehicleDataAsJsonString("", ByteString.empty)
           }
@@ -573,11 +593,11 @@ class MBTAService extends Actor with ActorLogging {
         .mapAsync[Routes](parallelism = 1) { _ =>
           MBTAaccess.queueRequest(
             //
-            // Filter on just the Commuter rail, Rapid Transit and Ferrys. The Bus routes push to too many substreams.
+            // Filter on just the Commuter rail, Rapid Transit. The Bus routes push to too many substreams.
             //
             HttpRequest(uri = MBTAaccess.mbtaUri(
               path  = "/routes",
-              query = Some(s"filter[type]=0,1,2,4&api_key=${api_key}")
+              query = Some(s"filter[type]=0,1,2&api_key=${api_key}")
             ))
           )
           .flatMap {
@@ -601,7 +621,15 @@ class MBTAService extends Actor with ActorLogging {
             log.error("RequestFlow.RoutesFlow.recover -- {}", e)
             Routes(routes = Vector.empty[Config])
         }
-        .mapConcat { case Routes(routes) => routes.map { r => VehicleRoute(route = r.getString("id")) } }
+        .mapConcat { case Routes(routes) =>
+          routes.map { r =>
+            VehicleRoute(
+              route            = r.getString("id"),
+              directionNames   = Try(r.getStringList("attributes.direction_names").asScala.toVector).getOrElse(Vector.empty[String]),
+              destinationNames = Try(r.getStringList("attributes.direction_destinations").asScala.toVector).getOrElse(Vector.empty[String])
+            )
+          }
+        }
     }
 
     def runFetchFlows : Future[Done] = {
