@@ -559,7 +559,20 @@ class MBTAService extends Actor with ActorLogging {
           case v: VehicleData =>
             import DefaultJsonProtocol._
 
-            implicit val VehicleDataFormat = jsonFormat18(VehicleData)
+            implicit object VehicleDataFormat extends JsonFormat[VehicleData] {
+              val baseFormat = jsonFormat18(VehicleData.apply)
+
+              override def read(json : JsValue) : VehicleData = ???
+              override def write(v : VehicleData) : JsValue = {
+                val base : JsValue = baseFormat.write(v)
+                v.latitude.flatMap { lat =>
+                  v.longitude.map { lon =>
+                    JsObject(base.asJsObject.fields ++ Map("position" -> JsString(s"${lat}, ${lon}"))) : JsValue
+                  }
+                }.getOrElse(JsObject(base.asJsObject.fields) : JsValue)
+              }
+            }
+
             VehicleDataAsJsonString(v.routeId, ByteString(v.toJson.toString + "\n", "UTF-8"))
 
           case _ => VehicleDataNull()
