@@ -586,6 +586,10 @@ class MBTAService extends Actor with ActorLogging {
     def pushToS3 : Flow[vd, vd, NotUsed] = {
       Flow[vd]
         .mapAsync(parallelism = 1) {
+          case vj @ VehicleDataAsJsonString("", ByteString.empty) => Future.successful {
+            log.debug("Supressing null s3 write.")
+            vj
+          }
           case vj : VehicleDataAsJsonString  => {
             Config.getStorageBucket.flatMap { bucket =>
               Config.getStorageBucketPrefix.map { prefix =>
