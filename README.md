@@ -8,24 +8,25 @@ Licensed under the Apache 2.0 agreement.
 1. Access to an AWS Account where IAM User credentials and an optional IAM Role ARN are needed to provide write access to an S3 bucket that will store the resulting data.
 2. Access to an MBTA API Key by registering at https://api-v3.mbta.com/register. This is needed to allow for the a maximum API access rate of 1000 requests per minute.
 
-# Configuration Options.
+# Configuration Options
 There are three ways of providing all the configuration needed to run this utility.
 
 ```
 mbta {
+    api = null # Required. Replace with your MBTA Api Key.
     aws {
         credentials {
-            accessKey              = null # Replace with your AWS Access Key ID
-            secretKey              = null # Replace with your AWS Secret Key
-            s3AccessRole           = null # Needed. Create a role to allow access to the S3 bucket in the mbta.aws.s3 object.
-            s3AccessRoleExternalId = null # Optional. If the roleArn requires an external Id as a backstop check.
+            accessKey              = null # Required. Replace with your AWS Access Key ID (IAM User credentials).
+            secretKey              = null # Required. Replace with your AWS Secret Key (IAM User credentials).
+            s3AccessRole           = null # Optional. This should be an IAM Role Arn that you IAM user can assume.
+            s3AccessRoleExternalId = null # Optional. If the Role Arn requires an external Id in the trust relationship.
         }
 
-        region = "US_EAST_1" # Change to specify the AWS region you are running your application within.
+        region = "us-east-1" # # Change to specify the AWS region you are running your application within.
 
         s3 {
-            bucket = "cs-gmills-mbta"          # Change to reflect your AWS S3 bucket
-            prefix = "MBTA/vehicle/positions"  # Change to reflect your path style prefix
+            bucket = "cs-gmills-mbta"          # Required. Change to reflect your AWS S3 bucket.
+            prefix = "MBTA/vehicle/positions"  # Required. Change to reflect your path style prefix.
         }
     }
 }
@@ -42,7 +43,7 @@ export MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
 ```
 
 ### 3. Individial Environment variables
-The back stop is to supply the config items via these enironment variables instead:
+The back stop is to supply the config items via these environment variables instead:
 * `AWS_ACCESS_KEY_ID` 
 * `AWS_SECRET_ACCESS_KEY`
 * `AWS_REGION` if not supplied the default is `US_EAST_1`
