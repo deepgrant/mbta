@@ -42,7 +42,7 @@ You can instead simply populate the environment variable with a string that is t
 export MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
 ```
 
-### 3. Individial Environment variables
+### 3. Environment variables
 The back stop is to supply the config items via these environment variables instead:
 * `AWS_ACCESS_KEY_ID`
 * `AWS_SECRET_ACCESS_KEY`
