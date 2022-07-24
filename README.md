@@ -39,6 +39,7 @@ Note that this format is `HOCON` although `JSON` or `YAML` is also a valid synta
 You can instead simply populate the environment variable with a string that is the `HOCON`. For example:
 ```
 export MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
+```
 
 ### 3. Individial Environment variables
 The back stop is to supply the config items via these enironment variables instead:
