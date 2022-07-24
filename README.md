@@ -1,12 +1,12 @@
-# MBTA Vehicle Positioins
-This utility is meant for pulling the current positions of all vehciles on the Commuter Rail (CR) and the repid transit (T) trains.
+# MBTA Vehicle Positions
+This utility is for pulling the current positions of all vehciles on the Commuter Rail (CR) and the rapid transit (T) trains for Massachusetss Bay Transit Authority (MBTA). The MBTA provides access to this data with a public REST interface (https://api-v3.mbta.com/docs/swagger/index.html). To use this code you will need to have an MBTA API Key.
 
 # License
 Licensed under the Apache 2.0 agreement.
 
 # Requirements
 1. Access to an AWS Account where IAM User credentials and an optional IAM Role ARN are needed to provide write access to an S3 bucket that will store the resulting data.
-2. Access to an MBTA API Key by registering at https://api-v3.mbta.com/login. This is needed to allow for the a maximum API access rate of 1000 requests per minute.
+2. Access to an MBTA API Key by registering at https://api-v3.mbta.com/register. This is needed to allow for the a maximum API access rate of 1000 requests per minute.
 
 # Configuration Options.
 There are three ways of providing all the configuration needed to run this utility.
@@ -38,7 +38,7 @@ Note that this format is `HOCON` although `JSON` or `YAML` is also a valid synta
 ### 2. Read in the Config via `MBTA_CONFIG` environment variable.
 You can instead simply populate the environment variable with a string that is the `HOCON`. For example:
 ```
-MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
+export MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
 
 ### 3. Individial Environment variables
 The back stop is to supply the config items via these enironment variables instead:
