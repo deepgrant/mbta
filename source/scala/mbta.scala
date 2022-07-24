@@ -113,18 +113,34 @@ class MBTAService extends Actor with ActorLogging {
   implicit val logger           = log
   implicit val timeout: Timeout = 30.seconds
 
-  val api_key = sys.env("mbta_api_key")
-
   object Config {
     lazy val config = Try {
-      val resource = getClass.getClassLoader.getResourceAsStream("MBTA.conf")
-      val source   = IOUtils.toString(resource, java.nio.charset.Charset.forName("UTF8"))
-      resource.close
-      ConfigFactory.parseString(source)
+      ConfigFactory.parseString(
+        sys.env.get("MBTA_CONFIG").getOrElse {
+          val resource = getClass.getClassLoader.getResourceAsStream("MBTA.conf")
+          val source   = IOUtils.toString(resource, java.nio.charset.Charset.forName("UTF8"))
+          resource.close
+          source
+        }
+      )
     }.recover {
       case e: Throwable =>
         log.warning("MBTAService.Config.config -- was not processed successfully -- {}", e)
         ConfigFactory.empty
+    }
+
+    def ApiKey : Try[String] = {
+      config.flatMap {
+        config => {
+          Try {
+            config.getString("mbta.api.key")
+          }.recoverWith {
+            case _ => Try {
+              sys.env("MBTA_API_KEY")
+            }
+          }
+        }
+      }
     }
 
     def AccessKey : Try[String] = {
@@ -166,7 +182,7 @@ class MBTAService extends Actor with ActorLogging {
             }
           }
         }
-      }.getOrElse("US_EAST_1")
+      }.getOrElse("us-east-1")
     }
 
     def S3RoleArn : Try[String] = {
@@ -224,6 +240,16 @@ class MBTAService extends Actor with ActorLogging {
         }
       }
     }
+
+    def maxRequestsPerPeriod : Int = {
+      ApiKey.map { _ => 1000 }.getOrElse(10)
+    }
+
+    def maxRequestsWindow : FiniteDuration = 1.minute
+
+    def updatePeriod : FiniteDuration = {
+      ApiKey.map { _ => 15.seconds }.getOrElse(10.minutes)
+    }
   }
 
   object Credentials {
@@ -276,6 +302,7 @@ class MBTAService extends Actor with ActorLogging {
 
   object S3Access {
     import akka.stream.alpakka.s3.{
+      AccessStyle,
       MultipartUploadResult,
       S3Attributes,
       S3Ext,
@@ -288,6 +315,7 @@ class MBTAService extends Actor with ActorLogging {
     lazy val s3Settings = S3Ext(system)
       .settings
       .withCredentialsProvider(Credentials.operationalCredentials)
+      .withAccessStyle(AccessStyle.PathAccessStyle)
 
     def s3Sink(bucket: String, bucketKey: String) : Sink[ByteString, Future[MultipartUploadResult]] = {
       S3
@@ -321,7 +349,7 @@ class MBTAService extends Actor with ActorLogging {
       MBTAaccess.queue = Some(queue)
 
       source
-        .throttle(1000, 1.minute)
+        .throttle(Config.maxRequestsPerPeriod, Config.maxRequestsWindow)
         .via(
           Http().newHostConnectionPoolHttps[Promise[HttpResponse]](
             host     = "api-v3.mbta.com",
@@ -356,6 +384,14 @@ class MBTAService extends Actor with ActorLogging {
             log.warning("MBTAaccess.runQ restarting")
             runQ
         }
+    }
+
+    def mbtaQuery(query: Map[String, String] = Map.empty[String, String]) : Option[String] = {
+      Config.ApiKey.map { api_key =>
+        Uri.Query(query + ("api_key" -> api_key)).toString
+      }.orElse {
+        Try(Uri.Query(query).toString)
+      }.toOption
     }
 
     def mbtaUri(path: String, query: Option[String] = None) = Uri(
@@ -449,7 +485,7 @@ class MBTAService extends Actor with ActorLogging {
             MBTAaccess.queueRequest(
               HttpRequest(uri = MBTAaccess.mbtaUri(
                 path  = "/vehicles",
-                query = Some(s"""include=stop&filter[route]=${route}&api_key=${api_key}""")
+                query = MBTAaccess.mbtaQuery(Map("include" -> "stop", "filter[route]" -> route))
               ))
             ).flatMap {
               case HttpResponse(StatusCodes.OK, _, entity, _) => {
@@ -517,7 +553,7 @@ class MBTAService extends Actor with ActorLogging {
             vd.stopId.map { stopId =>
               val uri = MBTAaccess.mbtaUri(
                 path  = s"/stops/${stopId}",
-                query = Some(s"""api_key=${api_key}""")
+                query = MBTAaccess.mbtaQuery()
               )
 
               MBTAaccess.queueRequest(
@@ -614,7 +650,7 @@ class MBTAService extends Actor with ActorLogging {
             //
             HttpRequest(uri = MBTAaccess.mbtaUri(
               path  = "/routes",
-              query = Some(s"filter[type]=0,1,2&api_key=${api_key}")
+              query = MBTAaccess.mbtaQuery(Map("filter[type]" -> "0,1,2"))
             ))
           )
           .flatMap {
@@ -669,7 +705,7 @@ class MBTAService extends Actor with ActorLogging {
 
     def runRF = {
       Source
-        .tick(initialDelay = FiniteDuration(1, "seconds"), interval = FiniteDuration(15, "seconds"), tick = TickRoutes)
+        .tick(initialDelay = FiniteDuration(1, "seconds"), interval = Config.updatePeriod, tick = TickRoutes)
         .buffer(size = 1, overflowStrategy = OverflowStrategy.dropHead)
         .mapAsync[Done](parallelism = 1) { _ =>
           runFetchFlows

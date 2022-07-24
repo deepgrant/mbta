@@ -6,14 +6,14 @@ Licensed under the Apache 2.0 agreement.
 
 # Requirements
 1. Access to an AWS Account where IAM User credentials and an optional IAM Role ARN are needed to provide write access to an S3 bucket that will store the resulting data.
-2. Access to an MBTA API Key by registering at https://api-v3.mbta.com/register. This is needed to allow for the a maximum API access rate of 1000 requests per minute.
+2. Access to an MBTA API Key by registering at https://api-v3.mbta.com/register. This is needed to allow for the a maximum API access rate of 1000 requests per minute. If you do not wish to provide an API key, then you will be restricted to 10 requests per minute to the MBTA Rest API and the update period is increase to 10 minutes from 15 seconds. Therefore it is highly recommended you register for the MBTA Api Key.
 
 # Configuration Options
 There are three ways of providing all the configuration needed to run this utility.
 
 ```
 mbta {
-    api = null # Required. Replace with your MBTA Api Key.
+    api = null # Optional. Ideally you should replace with your MBTA Api Key. This will ensure the faster request rate.
     aws {
         credentials {
             accessKey              = null # Required. Replace with your AWS Access Key ID (IAM User credentials).
@@ -44,9 +44,10 @@ export MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
 
 ### 3. Individial Environment variables
 The back stop is to supply the config items via these environment variables instead:
-* `AWS_ACCESS_KEY_ID` 
+* `AWS_ACCESS_KEY_ID`
 * `AWS_SECRET_ACCESS_KEY`
 * `AWS_REGION` if not supplied the default is `US_EAST_1`
+* `MBTA_API_KEY` - optional.
 * `MBTA_S3_ROLEARN` - optional IAM Role Arn
 * `MBTA_S3_ROLEARN_EXTERNAL_ID` - optional external ID for the IAM RoleArn trust relationship. Recommended is using a RoleArn.
 * `MBTA_STORAGE_BUCKET` - The bucket to where the position data will be placed.
@@ -60,8 +61,8 @@ To Build and then run the utility from your GIT clone workspace.
 This will both compile the Jar and then run it from within Gradle.
 
 # Position Data
-1. The utility will first pull all the MBTA Commuter Rail and Rapid Transit rail routes. 
-2. For each route the current running vehicles per route are then pulled. 
+1. The utility will first pull all the MBTA Commuter Rail and Rapid Transit rail routes.
+2. For each route the current running vehicles per route are then pulled.
 3. For each route the stop data is pulled and then used to augment the position data with intransit or stoped at station information.
 
 A typical position JSON object can look like:
