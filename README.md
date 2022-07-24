@@ -54,7 +54,7 @@ The back stop is to supply the config items via these environment variables inst
 * `MBTA_STORAGE_PREFIX` - a path style prefix tht will be appended to any Vechile Route Position data.
 
 # Building and Running
-To Build and then run the utility from your GIT clone workspace.
+To build and then run the utility from your GIT clone workspace.
 
 `./gradlew run`
 
