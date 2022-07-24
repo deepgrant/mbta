@@ -50,7 +50,6 @@ The back stop is to supply the config items via these enironment variables inste
 * `MBTA_S3_ROLEARN_EXTERNAL_ID` - optional external ID for the IAM RoleArn trust relationship. Recommended is using a RoleArn.
 * `MBTA_STORAGE_BUCKET` - The bucket to where the position data will be placed.
 * `MBTA_STORAGE_PREFIX` - a path style prefix tht will be appended to any Vechile Route Position data.
-```
 
 # Building and Running
 To Build and then run the utility from your GIT clone workspace.
