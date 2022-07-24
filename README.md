@@ -63,7 +63,7 @@ This will both compile the Jar and then run it from within Gradle.
 # Position Data
 1. The utility will first pull all the MBTA Commuter Rail and Rapid Transit rail routes.
 2. For each route the current running vehicles per route are then pulled.
-3. For each vehicle position, the `stopID` is queried and then used to augment the position data for the `IN_TRANSIT_TO` or `STOPPED_AT` at station information `stopName`.
+3. For each vehicle position, the `stopID` is queried and then used to augment the position data for the `IN_TRANSIT_TO` or `STOPPED_AT` station information: `stopName`.
 
 A typical position JSON object can look like:
 ```
