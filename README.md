@@ -46,7 +46,7 @@ export MBTA_CONFIG="$(cat source/resources/MBTA.conf)"
 The back stop is to supply the config items via these environment variables instead:
 * `AWS_ACCESS_KEY_ID`
 * `AWS_SECRET_ACCESS_KEY`
-* `AWS_REGION` if not supplied the default is `US_EAST_1`
+* `AWS_REGION` if not supplied the default is `us-east-1`
 * `MBTA_API_KEY` - optional.
 * `MBTA_S3_ROLEARN` - optional IAM Role Arn
 * `MBTA_S3_ROLEARN_EXTERNAL_ID` - optional external ID for the IAM RoleArn trust relationship. Recommended is using a RoleArn.
