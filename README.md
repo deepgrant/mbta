@@ -1,5 +1,5 @@
 # MBTA Vehicle Positions
-This utility is for pulling the current positions of all vehicles on the Commuter Rail (CR) and the rapid transit (T) trains for Massachusets Bay Transit Authority (MBTA). The MBTA provides access to this data with a public REST interface (https://api-v3.mbta.com/docs/swagger/index.html). To use this code you will need to have an MBTA API Key.
+This utility is for pulling the current positions of all vehicles on the Commuter Rail (CR) and the rapid transit (T) trains for Massachusets Bay Transit Authority (MBTA). The MBTA provides access to this data with a public REST interface (https://api-v3.mbta.com/docs/swagger/index.html). To use this code you will need to have an MBTA API Key. The vehicle positions are then aggregated per route and then the aggregate is uploaded into AWS S3 using AWS IAM credentials that you will need to provide. 
 
 # License
 Licensed under the Apache 2.0 agreement.
