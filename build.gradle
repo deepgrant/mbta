@@ -1,7 +1,7 @@
 
 plugins {
   id 'scala'
-  id "com.github.maiflai.scalatest" version "0.19"
+  id "com.palantir.docker" version "0.34.0"
 }
 
 configurations {
@@ -39,7 +39,7 @@ dependencies {
     , libs.sprayJSON
     ]
   )
-  
+
   macrosCompile(
     [ libs.scala
     , libs.scalaReflect
@@ -75,22 +75,30 @@ compileScala {
 jar {
   manifest {
     attributes(
-      [ "Implementation-Title": "mbta-dg"
-      , "Implementation-Version": "1.0-alpha"
-      , "Implementation-Vendor": "Deepgrant"
+      [ "Implementation-Title"   : "mbta-vehicle-positions"
+      , "Implementation-Version" : "2.0"
+      , "Implementation-Vendor"  : "github://Deepgrant"
       ]
     )
   }
 }
 
 task printClasspath {
-    doLast {
-        configurations.testRuntime.each { println it }
-    }
+  doLast {
+    configurations.runtime.each { println it }
+  }
 }
 
 task run(type: JavaExec, dependsOn: classes) {
-    main = 'mbta.actor.MBTAMain'
-    classpath sourceSets.main.runtimeClasspath
-    classpath configurations.runtime
+  main = 'mbta.actor.MBTAMain'
+  classpath sourceSets.main.runtimeClasspath
+  classpath configurations.runtime
+}
+
+docker {
+  name "mbta-vehicle-positions:2.0"
+  dockerfile file('Dockerfile')
+  files tasks.jar, 'docker-run.sh'
+  copySpec.from(configurations.runtime)
+  pull true
 }
