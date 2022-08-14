@@ -1,5 +1,5 @@
 # MBTA Vehicle Positions
-This utility is for pulling the current positions of all vehicles on the Commuter Rail (CR) and the rapid transit (T) trains for Massachusets Bay Transit Authority (MBTA). The MBTA provides access to this data with a public REST interface (https://api-v3.mbta.com/docs/swagger/index.html). To use this code you will need to have an MBTA API Key. The vehicle positions are then aggregated per route and then the aggregate is uploaded into AWS S3 using AWS IAM credentials that you will need to provide. 
+This utility is for pulling the current positions of all vehicles on the Commuter Rail (CR) and the rapid transit (T) trains for Massachusets Bay Transit Authority (MBTA). The MBTA provides access to this data with a public REST interface (https://api-v3.mbta.com/docs/swagger/index.html). To use this code you will need to have an MBTA API Key. The vehicle positions are then aggregated per route and then the aggregate is uploaded into AWS S3 using AWS IAM credentials that you will need to provide.
 
 # License
 Licensed under the Apache 2.0 agreement.
@@ -128,3 +128,18 @@ aws s3 ls s3://cs-gmills-mbta/MBTA/vehicle/positions/CR-Fitchburg/
 ...
 ```
 Note that an object name used to store the vehicle position data is the current Epoch milliseconds elapsed and is therefore a useful timestamping of the written data and the temporal order of the data.
+
+# Docker Image
+To build a docker container image with all `mbta.jar` and the dependency `jar`s installed you first need to make sure you have `Docker` installed.
+For macOS: https://docs.docker.com/desktop/install/mac-install/
+For PC: https://docs.docker.com/desktop/install/windows-install/
+For Linux systems: https://docs.docker.com/desktop/install/linux-install/
+
+`./gradlew docker` will pull a Ubuntu base image down and then install OpenJDK headless and all the required `jar` files into /root.
+If you have not build the `mbta.jar` then the `docker` task has a dependency on the `jar` task and will automatically build this first.
+
+## To Run the image in a container
+For example if you supply all the configurables via the `MBTA_CONFIG` variable. For AWS API access to work we still need to specify the `AWS_REGION` environment variable.
+```
+docker run -it --env MBTA_CONFIG="${MBTA_CONFIG}" --env AWS_REGION="us-east-1" mbta-vehicle-positions:2.0
+```

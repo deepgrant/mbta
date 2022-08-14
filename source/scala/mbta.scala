@@ -133,7 +133,7 @@ class MBTAService extends Actor with ActorLogging {
       config.flatMap {
         config => {
           Try {
-            config.getString("mbta.api.key")
+            config.getString("mbta.api")
           }.recoverWith {
             case _ => Try {
               sys.env("MBTA_API_KEY")
@@ -436,6 +436,9 @@ class MBTAService extends Actor with ActorLogging {
   }
 
   override def preStart() : Unit = {
+    Config.config.map { config =>
+      log.info(MBTAService.pp(config))
+    }
     MBTAaccess.runQ
   }
 
