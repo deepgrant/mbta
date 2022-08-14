@@ -131,9 +131,9 @@ Note that an object name used to store the vehicle position data is the current 
 
 # Docker Image
 To build a docker container image with all `mbta.jar` and the dependency `jar`s installed you first need to make sure you have `Docker` installed.
-For macOS: https://docs.docker.com/desktop/install/mac-install/
-For PC: https://docs.docker.com/desktop/install/windows-install/
-For Linux systems: https://docs.docker.com/desktop/install/linux-install/
+* For macOS: https://docs.docker.com/desktop/install/mac-install/
+* For PC: https://docs.docker.com/desktop/install/windows-install/
+* For Linux systems: https://docs.docker.com/desktop/install/linux-install/
 
 `./gradlew docker` will pull a Ubuntu base image down and then install OpenJDK headless and all the required `jar` files into /root.
 If you have not build the `mbta.jar` then the `docker` task has a dependency on the `jar` task and will automatically build this first.
