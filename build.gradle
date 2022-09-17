@@ -16,7 +16,7 @@ repositories {
 }
 
 dependencies {
-  compile(
+  implementation(
     [ libs.scala
     , libs.scalaReflect
     , libs.scalaParser
@@ -85,20 +85,20 @@ jar {
 
 task printClasspath {
   doLast {
-    configurations.runtime.each { println it }
+    configurations.runtimeClasspath.each { println it }
   }
 }
 
 task run(type: JavaExec, dependsOn: classes) {
   main = 'mbta.actor.MBTAMain'
   classpath sourceSets.main.runtimeClasspath
-  classpath configurations.runtime
+  classpath configurations.runtimeClasspath
 }
 
 docker {
   name "mbta-vehicle-positions:2.0"
   dockerfile file('Dockerfile')
   files tasks.jar, 'docker-run.sh'
-  copySpec.from(configurations.runtime)
+  copySpec.from(configurations.runtimeClasspath)
   pull true
 }
