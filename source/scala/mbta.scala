@@ -1,16 +1,17 @@
 package mbta.actor
 
-import akka.actor._
-import akka.cluster._
-import akka.cluster.ClusterEvent._
-import akka.Done
-import akka.event.{
+import org.apache.pekko
+import pekko.actor._
+import pekko.cluster._
+import pekko.cluster.ClusterEvent._
+import pekko.Done
+import pekko.event.{
   Logging,
   LoggingAdapter,
   LogSource
 }
-import akka.http.scaladsl.{ConnectionContext,Http}
-import akka.http.scaladsl.model.{
+import pekko.http.scaladsl.{ConnectionContext,Http}
+import pekko.http.scaladsl.model.{
   HttpRequest,
   HttpResponse,
   HttpMethods,
@@ -19,43 +20,41 @@ import akka.http.scaladsl.model.{
   StatusCodes,
   Uri
 }
-import akka.http.scaladsl.model.headers.{
+import pekko.http.scaladsl.model.headers.{
   Host,
   RawHeader
 }
-import akka.http.scaladsl.model.Uri
-import akka.http.scaladsl.model.Uri.{
+import pekko.http.scaladsl.model.Uri
+import pekko.http.scaladsl.model.Uri.{
   Authority,
   NamedHost,
   Path
 }
-import akka.NotUsed
-import akka.stream.ActorMaterializer
-import akka.util.{
+import pekko.NotUsed
+import pekko.stream.ActorMaterializer
+import pekko.util.{
   ByteString,
   Timeout
 }
-import akka.stream.{
+import pekko.stream.{
   ActorMaterializer,
   ActorMaterializerSettings,
   OverflowStrategy
 }
-import akka.stream.scaladsl.{
+import pekko.stream.scaladsl.{
   Keep,
   Flow,
   Sink,
   Source,
   SourceQueueWithComplete
 }
-import akka.http.scaladsl.server._
-import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.settings.{
+import pekko.http.scaladsl.server._
+import pekko.http.scaladsl.model.StatusCodes._
+import pekko.http.scaladsl.server.Directives._
+import pekko.http.scaladsl.settings.{
   ClientConnectionSettings,
   ConnectionPoolSettings
 }
-
-import collection.JavaConverters._
 
 import com.typesafe.config.{
   Config,
@@ -81,6 +80,7 @@ import scala.concurrent.duration.{
   SECONDS
 }
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 import scala.util.{
   Success,
   Failure,
@@ -92,26 +92,26 @@ import spray.json._
 object MBTAMain extends App {
   import java.util.concurrent.TimeUnit.{SECONDS => seconds}
 
-  implicit val timeout : akka.util.Timeout = 10.seconds
-  implicit val system = ActorSystem()
-  implicit val executionContext = system.dispatcher
-  implicit val scheduler = system.scheduler
-  implicit val logFactory = Logging(system, _ : Class[_ <: Any])
+  implicit val timeout : pekko.util.Timeout                                 = 10.seconds
+  implicit val system  : pekko.actor.ActorSystem                            = ActorSystem()
+  implicit val executionContext : scala.concurrent.ExecutionContextExecutor = system.dispatcher
+  implicit val scheduler : pekko.actor.Scheduler                            = system.scheduler
 
+  val logFactory = Logging(system, _ : Class[_ <: Any])
   val log = logFactory(this.getClass)
 
-  val mbtaService = system.actorOf(Props[MBTAService], name="mbtaService")
+  val mbtaService = system.actorOf(Props[MBTAService](), name="mbtaService")
 }
 
 class MBTAService extends Actor with ActorLogging {
-  import akka.pattern.ask
+  import pekko.pattern.ask
   import context.dispatcher
-  import akka.pattern.pipe
+  import pekko.pattern.pipe
   import context.dispatcher
 
-  implicit val system           = ActorSystem()
-  implicit val logger           = log
-  implicit val timeout: Timeout = 30.seconds
+  implicit val system  : pekko.actor.ActorSystem    = ActorSystem()
+  implicit val logger  : pekko.event.LoggingAdapter = log
+  implicit val timeout : Timeout                    = 30.seconds
 
   object Config {
     lazy val config = Try {
@@ -301,14 +301,14 @@ class MBTAService extends Actor with ActorLogging {
   }
 
   object S3Access {
-    import akka.stream.alpakka.s3.{
+    import org.apache.pekko.stream.connectors.s3.{
       AccessStyle,
       MultipartUploadResult,
       S3Attributes,
       S3Ext,
       S3Settings
     }
-    import akka.stream.alpakka.s3.scaladsl.{
+    import org.apache.pekko.stream.connectors.s3.scaladsl.{
       S3
     }
 
@@ -341,7 +341,7 @@ class MBTAService extends Actor with ActorLogging {
 
     var queue : Option[SourceQueueWithComplete[(HttpRequest, Promise[HttpResponse])]] = None
 
-    def runQ : Future[akka.Done] = {
+    def runQ : Future[pekko.Done] = {
       val (queue, source) = Source
         .queue[(HttpRequest,Promise[HttpResponse])](bufferSize = 256, overflowStrategy = OverflowStrategy.backpressure)
         .preMaterialize()
@@ -358,7 +358,7 @@ class MBTAService extends Actor with ActorLogging {
             log      = log)
         )
         .map { case (res, p) =>
-          p.tryCompleteWith {
+          p.completeWith {
             res.map { case res =>
               res.entity
                 .withoutSizeLimit()
