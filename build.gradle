@@ -1,7 +1,7 @@
 
 plugins {
   id 'scala'
-  id "com.palantir.docker" version "0.34.0"
+  id "com.palantir.docker" version "0.36.0"
 }
 
 configurations {
@@ -21,15 +21,15 @@ dependencies {
     , libs.scalaReflect
     , libs.scalaParser
     , libs.scalaXML
-    , libs.akka_actor
-    , libs.akka_cluster
-    , libs.akka_http
-    , libs.akka_http_xml
-    , libs.akka_slf4j
-    , libs.akka_stream
-    , libs.akka_stream_json
-    , libs.akka_stream_alpakka_s3
-    , libs.sprayJSON
+    , libs.scalaCollectionsCompat
+    , libs.pekko_actor
+    , libs.pekko_cluster
+    , libs.pekko_http
+    , libs.pekko_http_xml
+    , libs.pekko_slf4j
+    , libs.pekko_stream
+    , libs.pekko_stream_json
+    , libs.pekko_connectors_s3
     , libs.slf4j
     , libs.logback_classic
     , libs.logback_core
