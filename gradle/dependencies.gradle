@@ -39,6 +39,7 @@ libs +=
   , pekko_actor: "org.apache.pekko:pekko-actor_${versions.scala}:${versions.pekko}"
   , pekko_cluster: "org.apache.pekko:pekko-cluster_${versions.scala}:${versions.pekko}"
   , pekko_http: "org.apache.pekko:pekko-http_${versions.scala}:${versions.pekkoHttp}"
+  , pekko_http_xml: "org.apache.pekko:pekko-http-xml_${versions.scala}:${versions.pekkoHttp}"
   , pekko_slf4j: "org.apache.pekko:pekko-slf4j_${versions.scala}:${versions.pekko}"
   , pekko_stream: "org.apache.pekko:pekko-stream_${versions.scala}:${versions.pekko}"
   , pekko_stream_json: "org.mdedetrich:pekko-stream-json_${versions.scala}:${versions.pekkoStreamJson}"

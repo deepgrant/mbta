@@ -25,6 +25,7 @@ dependencies {
     , libs.pekko_actor
     , libs.pekko_cluster
     , libs.pekko_http
+    , libs.pekko_http_xml
     , libs.pekko_slf4j
     , libs.pekko_stream
     , libs.pekko_stream_json
