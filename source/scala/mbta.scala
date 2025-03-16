@@ -671,6 +671,7 @@ class MBTAService extends Actor with ActorLogging {
 
   def receive: PartialFunction[Any,Unit] = {
     case event =>
+      throw new Exception("boom!")
       log.error("Unexpected event={}", event.toString)
   }
 }
