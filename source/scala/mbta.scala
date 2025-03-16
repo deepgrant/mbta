@@ -2,34 +2,16 @@ package mbta.actor
 
 import org.apache.pekko
 import pekko.actor._
-import pekko.cluster._
-import pekko.cluster.ClusterEvent._
 import pekko.Done
-import pekko.event.{
-  Logging,
-  LoggingAdapter,
-  LogSource
-}
-import pekko.http.scaladsl.{ConnectionContext,Http}
+import pekko.event.Logging
+import pekko.http.scaladsl.Http
 import pekko.http.scaladsl.model.{
   HttpRequest,
   HttpResponse,
-  HttpMethods,
   HttpEntity,
-  HttpHeader,
-  StatusCodes,
-  Uri
-}
-import pekko.http.scaladsl.model.headers.{
-  Host,
-  RawHeader
+  StatusCodes
 }
 import pekko.http.scaladsl.model.Uri
-import pekko.http.scaladsl.model.Uri.{
-  Authority,
-  NamedHost,
-  Path
-}
 import pekko.NotUsed
 import pekko.stream.ActorMaterializer
 import pekko.util.{
@@ -38,7 +20,6 @@ import pekko.util.{
 }
 import pekko.stream.{
   ActorMaterializer,
-  ActorMaterializerSettings,
   OverflowStrategy
 }
 import pekko.stream.scaladsl.{
@@ -48,37 +29,21 @@ import pekko.stream.scaladsl.{
   Source,
   SourceQueueWithComplete
 }
-import pekko.http.scaladsl.server._
-import pekko.http.scaladsl.model.StatusCodes._
-import pekko.http.scaladsl.server.Directives._
-import pekko.http.scaladsl.settings.{
-  ClientConnectionSettings,
-  ConnectionPoolSettings
-}
+import pekko.http.scaladsl.settings.ConnectionPoolSettings
 
 import com.typesafe.config.{
   Config,
-  ConfigFactory,
-  ConfigRenderOptions
+  ConfigFactory
 }
 
 import org.apache.commons.io.IOUtils
 
-import org.slf4j.{
-  LoggerFactory
-}
 
 import scala.concurrent.{
-  Await,
-  ExecutionContext,
   Future,
   Promise
 }
-import scala.concurrent.duration.{
-  Duration,
-  FiniteDuration,
-  SECONDS
-}
+import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import scala.util.{
@@ -90,7 +55,6 @@ import scala.util.{
 import spray.json._
 
 object MBTAMain extends App {
-  import java.util.concurrent.TimeUnit.{SECONDS => seconds}
 
   implicit val timeout : pekko.util.Timeout                                 = 10.seconds
   implicit val system  : pekko.actor.ActorSystem                            = ActorSystem()
@@ -104,9 +68,6 @@ object MBTAMain extends App {
 }
 
 class MBTAService extends Actor with ActorLogging {
-  import pekko.pattern.ask
-  import context.dispatcher
-  import pekko.pattern.pipe
   import context.dispatcher
 
   implicit val system  : pekko.actor.ActorSystem    = ActorSystem()
@@ -305,8 +266,7 @@ class MBTAService extends Actor with ActorLogging {
       AccessStyle,
       MultipartUploadResult,
       S3Attributes,
-      S3Ext,
-      S3Settings
+      S3Ext
     }
     import org.apache.pekko.stream.connectors.s3.scaladsl.{
       S3

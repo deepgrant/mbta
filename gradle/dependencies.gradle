@@ -7,7 +7,7 @@ ext {
 
 versions +=
   [ scala: "2.13"
-  , scalaMinor: ".15"
+  , scalaMinor: "15"
   , scalaCollectionsCompat: "2.11.0"
   , scalaParser: "2.1.1"
   , scalaTest: "3.2.16"
@@ -27,9 +27,9 @@ versions +=
   ]
 
 libs +=
-  [ scala: "org.scala-lang:scala-library:${versions.scala}${versions.scalaMinor}"
-  , scalaCompiler: "org.scala-lang:scala-compiler:${versions.scala}${versions.scalaMinor}"
-  , scalaReflect: "org.scala-lang:scala-reflect:${versions.scala}${versions.scalaMinor}"
+  [ scala: "org.scala-lang:scala-library:${versions.scala}.${versions.scalaMinor}"
+  , scalaCompiler: "org.scala-lang:scala-compiler:${versions.scala}.${versions.scalaMinor}"
+  , scalaReflect: "org.scala-lang:scala-reflect:${versions.scala}.${versions.scalaMinor}"
   , scalaXML: "org.scala-lang.modules:scala-xml_${versions.scala}:${versions.scalaXml}"
   , scalaCollectionsCompat: "org.scala-lang.modules:scala-collection-compat_${versions.scala}:${versions.scalaCollectionsCompat}"
   , scalaTest: "org.scalatest:scalatest_${versions.scala}:${versions.scalaTest}"
