@@ -1,6 +1,20 @@
 package mbta.actor
 
+import com.typesafe.config.Config
+import com.typesafe.config.ConfigFactory
+import org.apache.commons.io.IOUtils
 import org.apache.pekko
+import spray.json._
+
+import scala.concurrent.Future
+import scala.concurrent.Promise
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
+
 import pekko.actor._
 import pekko.Done
 import pekko.event.Logging
@@ -13,15 +27,11 @@ import pekko.http.scaladsl.model.{
 }
 import pekko.http.scaladsl.model.Uri
 import pekko.NotUsed
-import pekko.stream.ActorMaterializer
 import pekko.util.{
   ByteString,
   Timeout
 }
-import pekko.stream.{
-  ActorMaterializer,
-  OverflowStrategy
-}
+import pekko.stream.OverflowStrategy
 import pekko.stream.scaladsl.{
   Keep,
   Flow,
@@ -30,29 +40,8 @@ import pekko.stream.scaladsl.{
   SourceQueueWithComplete
 }
 import pekko.http.scaladsl.settings.ConnectionPoolSettings
-
-import com.typesafe.config.{
-  Config,
-  ConfigFactory
-}
-
-import org.apache.commons.io.IOUtils
-
-
-import scala.concurrent.{
-  Future,
-  Promise
-}
-import scala.concurrent.duration.FiniteDuration
-import scala.concurrent.duration._
-import scala.jdk.CollectionConverters._
-import scala.util.{
-  Success,
-  Failure,
-  Try
-}
-
-import spray.json._
+import org.apache.pekko.event.LoggingAdapter
+import org.apache.pekko.stream.connectors.s3.S3Settings
 
 object MBTAMain extends App {
 
@@ -61,10 +50,10 @@ object MBTAMain extends App {
   implicit val executionContext : scala.concurrent.ExecutionContextExecutor = system.dispatcher
   implicit val scheduler : pekko.actor.Scheduler                            = system.scheduler
 
-  val logFactory = Logging(system, _ : Class[_ <: Any])
-  val log = logFactory(this.getClass)
+  val logFactory: Class[_] => LoggingAdapter = Logging(system, _ : Class[_ <: Any])
+  val log: LoggingAdapter = logFactory(this.getClass)
 
-  val mbtaService = system.actorOf(Props[MBTAService](), name="mbtaService")
+  val mbtaService: ActorRef = system.actorOf(Props[MBTAService](), name="mbtaService")
 }
 
 class MBTAService extends Actor with ActorLogging {
@@ -75,7 +64,7 @@ class MBTAService extends Actor with ActorLogging {
   implicit val timeout : Timeout                    = 30.seconds
 
   object Config {
-    lazy val config = Try {
+    lazy val config: Try[Config] = Try {
       ConfigFactory.parseString(
         sys.env.get("MBTA_CONFIG").getOrElse {
           val resource = getClass.getClassLoader.getResourceAsStream("MBTA.conf")
@@ -272,7 +261,7 @@ class MBTAService extends Actor with ActorLogging {
       S3
     }
 
-    lazy val s3Settings = S3Ext(system)
+    lazy val s3Settings: S3Settings = S3Ext(system)
       .settings
       .withCredentialsProvider(Credentials.operationalCredentials)
       .withAccessStyle(AccessStyle.PathAccessStyle)
@@ -283,7 +272,7 @@ class MBTAService extends Actor with ActorLogging {
         .withAttributes(S3Attributes.settings(s3Settings))
     }
 
-    def putObject(vj: ByteString, bucket: String, bucketKey: String) = {
+    def putObject(vj: ByteString, bucket: String, bucketKey: String): Future[Object] = {
       Source.single(vj).runWith(s3Sink(bucket, bucketKey))
         .recover {
           case e: Throwable =>
@@ -294,7 +283,7 @@ class MBTAService extends Actor with ActorLogging {
   }
 
   object MBTAaccess {
-    def transportSettings = ConnectionPoolSettings(system)
+    def transportSettings: ConnectionPoolSettings = ConnectionPoolSettings(system)
       .withMaxConnections(4)
       .withMaxOpenRequests(256)
       .withPipeliningLimit(64)
@@ -354,7 +343,7 @@ class MBTAService extends Actor with ActorLogging {
       }.toOption
     }
 
-    def mbtaUri(path: String, query: Option[String] = None) = Uri(
+    def mbtaUri(path: String, query: Option[String] = None): Uri = Uri(
       scheme      = "https",
       path        = Uri.Path(path),
       queryString = query,
@@ -666,7 +655,7 @@ class MBTAService extends Actor with ActorLogging {
         .run()
     }
 
-    def runRF = {
+    def runRF: Future[Done] = {
       Source
         .tick(initialDelay = FiniteDuration(1, "seconds"), interval = Config.updatePeriod, tick = TickRoutes)
         .buffer(size = 1, overflowStrategy = OverflowStrategy.dropHead)
@@ -680,14 +669,14 @@ class MBTAService extends Actor with ActorLogging {
 
   RequestFlow.runRF
 
-  def receive = {
+  def receive: PartialFunction[Any,Unit] = {
     case event =>
       log.error("Unexpected event={}", event.toString)
   }
 }
 
 object MBTAService {
-  def pp(x: Any) = pprint.PPrinter.Color.tokenize(x, width = 512, height = 1000).mkString
+  def pp(x: Any): String = pprint.PPrinter.Color.tokenize(x, width = 512, height = 1000).mkString
 
   object Request {
     sealed trait T
