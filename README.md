@@ -143,3 +143,8 @@ For example if you supply all the configurables via the `MBTA_CONFIG` variable. 
 ```
 docker run -it --env MBTA_CONFIG="${MBTA_CONFIG}" --env AWS_REGION="us-east-1" mbta-vehicle-positions:2.0
 ```
+
+# Running ScalaFix rules
+```
+./gradlew --no-daemon scalafixMain
+```

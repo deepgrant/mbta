@@ -2,11 +2,11 @@
 plugins {
   id 'scala'
   id "com.palantir.docker" version "0.36.0"
+  id 'io.github.cosmicsilence.scalafix' version '0.2.4'
 }
 
 configurations {
   all*.exclude group: 'org.bytedeco', module: 'javacpp-presets'
-  macrosCompile
 }
 
 apply from: "$projectDir/gradle/dependencies.gradle"
@@ -39,22 +39,13 @@ dependencies {
     , libs.sprayJSON
     ]
   )
-
-  macrosCompile(
-    [ libs.scala
-    , libs.scalaReflect
-    ]
-  )
+  scalafix "org.scala-lang:scala-rewrites_2.13:+"
 }
 
 tasks.withType(ScalaCompile) {
 }
 
 sourceSets {
-  macros {
-    scala.srcDir "source/scala-macros"
-    compileClasspath += files("source/scala-macros")
-  }
   main {
     scala.srcDir "source/scala"
     compileClasspath += files("source/scala", "build/classes/macros")
@@ -62,14 +53,11 @@ sourceSets {
   }
 }
 
-compileMacrosScala {
-  // support for "gradle -t" builds
-  inputs.files fileTree(dir: "${projectDir}/source/scala-macros", include: "**.scala")
-  inputs.files fileTree(dir: "${projectDir}/source/scala", include: "**.scala")
+compileScala {
 }
 
-compileScala {
-  dependsOn compileMacrosScala
+tasks.withType(ScalaCompile).configureEach {
+  scalaCompileOptions.additionalParameters = ['-Wunused']
 }
 
 jar {
