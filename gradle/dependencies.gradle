@@ -7,7 +7,7 @@ ext {
 
 versions +=
   [ scala: "2.13"
-  , scalaMinor: "15"
+  , scalaMinor: "16"
   , scalaCollectionsCompat: "2.11.0"
   , scalaParser: "2.1.1"
   , scalaTest: "3.2.16"
