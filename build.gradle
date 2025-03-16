@@ -39,6 +39,7 @@ dependencies {
     , libs.sprayJSON
     ]
   )
+  scalafix "org.scala-lang:scala-rewrites_2.13:+"
 }
 
 tasks.withType(ScalaCompile) {
@@ -56,7 +57,7 @@ compileScala {
 }
 
 tasks.withType(ScalaCompile).configureEach {
-    scalaCompileOptions.additionalParameters = ['-Wunused']
+  scalaCompileOptions.additionalParameters = ['-Wunused']
 }
 
 jar {
